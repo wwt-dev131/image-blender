@@ -1,0 +1,2262 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>图片合成器 - Image Blender</title>
+<style>
+/* ==================== Reset & Base ==================== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #1a1a2e; color: #e0e0e0;
+  display: flex; flex-direction: column;
+  user-select: none; -webkit-user-select: none;
+}
+
+/* ==================== Header ==================== */
+.header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 16px; background: #16162b;
+  border-bottom: 1px solid #2a2a4a; flex-shrink: 0;
+  min-height: 48px;
+}
+.header .logo { font-size: 18px; font-weight: 700; letter-spacing: 0.5px; }
+.header .logo span { color: #7c8cf8; }
+.header .actions { display: flex; gap: 8px; }
+.header button {
+  padding: 7px 16px; border: none; border-radius: 6px;
+  font-size: 13px; cursor: pointer; font-weight: 600;
+  transition: all 0.15s;
+}
+.btn-primary { background: #7c8cf8; color: #fff; }
+.btn-primary:hover { background: #6b7de8; }
+.btn-outline { background: transparent; color: #ccc; border: 1px solid #444 !important; }
+.btn-outline:hover { background: #2a2a4a; }
+.btn-danger { background: #e0556a; color: #fff; }
+.btn-danger:hover { background: #c94a5e; }
+
+/* ==================== Main Layout ==================== */
+.main {
+  display: flex; flex: 1; overflow: hidden;
+}
+
+/* ==================== Left Panel - Sticker Library ==================== */
+.sidebar {
+  width: 240px; min-width: 240px; background: #1e1e36;
+  border-right: 1px solid #2a2a4a;
+  display: flex; flex-direction: column;
+  overflow-y: auto; flex-shrink: 0;
+}
+.sidebar-section { padding: 12px; }
+.sidebar-title {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+  color: #888; margin-bottom: 8px;
+}
+.emoji-grid {
+  display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px;
+}
+.emoji-btn {
+  aspect-ratio: 1; font-size: 24px; cursor: pointer;
+  background: #252540; border: 1px solid transparent;
+  border-radius: 8px; display: flex; align-items: center;
+  justify-content: center; transition: all 0.15s;
+}
+.emoji-btn:hover { background: #303058; border-color: #7c8cf8; transform: scale(1.08); }
+.emoji-btn:active { transform: scale(0.95); }
+
+.upload-sticker-btn {
+  width: 100%; padding: 10px; background: #252540;
+  border: 1px dashed #444; border-radius: 8px;
+  color: #aaa; cursor: pointer; font-size: 12px;
+  text-align: center; transition: all 0.15s;
+  margin-top: 8px;
+}
+.upload-sticker-btn:hover { border-color: #7c8cf8; color: #ccc; }
+
+/* ==================== Center - Canvas ==================== */
+.canvas-container {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  background: #12121f;
+  background-image:
+    linear-gradient(45deg, #1a1a30 25%, transparent 25%),
+    linear-gradient(-45deg, #1a1a30 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #1a1a30 75%),
+    linear-gradient(-45deg, transparent 75%, #1a1a30 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+  position: relative; overflow: hidden;
+}
+.canvas-wrapper {
+  position: relative;
+  box-shadow: 0 0 40px rgba(0,0,0,0.5);
+}
+canvas {
+  display: block;
+  cursor: crosshair;
+  max-width: calc(100vw - 500px);
+  max-height: calc(100vh - 100px);
+}
+.drop-zone-overlay {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: none;
+}
+.drop-zone-text {
+  font-size: 16px; color: #666; text-align: center; line-height: 1.8;
+}
+.drop-zone-text .icon { font-size: 48px; display: block; margin-bottom: 8px; }
+
+/* ==================== Right Panel - Properties ==================== */
+.properties {
+  width: 260px; min-width: 260px; background: #1e1e36;
+  border-left: 1px solid #2a2a4a;
+  display: flex; flex-direction: column;
+  overflow-y: auto; flex-shrink: 0; padding: 12px;
+}
+.prop-group {
+  background: #252540; border-radius: 8px; padding: 12px;
+  margin-bottom: 10px;
+}
+.prop-group-title {
+  font-size: 11px; text-transform: uppercase;
+  letter-spacing: 1px; color: #888; margin-bottom: 10px;
+}
+.prop-row { display: flex; align-items: center; margin-bottom: 8px; }
+.prop-row:last-child { margin-bottom: 0; }
+.prop-label { font-size: 12px; width: 60px; flex-shrink: 0; color: #aaa; }
+.prop-row input[type="range"] { flex: 1; accent-color: #7c8cf8; height: 4px; }
+.prop-value { font-size: 11px; width: 36px; text-align: right; color: #888; flex-shrink: 0; }
+.prop-row input[type="checkbox"] { accent-color: #7c8cf8; }
+
+/* Layer panel */
+.layer-item {
+  display:flex; align-items:center; gap:8px; padding:5px 8px;
+  background:#1e1e36; border:1px solid transparent; border-radius:6px;
+  cursor:pointer; transition:all 0.12s; font-size:11px;
+}
+.layer-item:hover { background:#2a2a4a; }
+.layer-item.selected { border-color:#7c8cf8; background:#252550; }
+.layer-item.drag-over { border-color:#a78bfa; border-style:dashed; }
+.layer-thumb {
+  width:36px; height:36px; border-radius:4px; object-fit:contain;
+  background:#12121f; flex-shrink:0;
+}
+.layer-info { flex:1; min-width:0; overflow:hidden; }
+.layer-name { color:#ccc; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.layer-detail { color:#777; font-size:10px; }
+.layer-actions { display:flex; gap:2px; flex-shrink:0; }
+.layer-btn {
+  background:none; border:none; color:#888; cursor:pointer; font-size:10px;
+  padding:2px 4px; border-radius:3px;
+}
+.layer-btn:hover { background:#3a3a5a; color:#ccc; }
+
+.btn-blend {
+  width: 100%; padding: 10px; background: linear-gradient(135deg, #7c8cf8, #a78bfa);
+  border: none; border-radius: 8px; color: #fff; font-size: 14px;
+  font-weight: 700; cursor: pointer; transition: all 0.2s;
+}
+.btn-blend:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(124,140,248,0.3); }
+.btn-blend:active { transform: translateY(0); }
+.btn-blend:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+.placeholder-text {
+  color: #555; font-size: 13px; text-align: center; padding: 40px 0;
+}
+
+/* Toast */
+.toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: #333; color: #fff; padding: 10px 24px; border-radius: 20px;
+  font-size: 13px; z-index: 999; pointer-events: none;
+  opacity: 0; transition: opacity 0.3s;
+}
+.toast.show { opacity: 1; }
+
+/* Responsive */
+@media (max-width: 900px) {
+  .main { flex-direction: column; }
+  .sidebar { width: 100%; min-width: 0; flex-direction: row; flex-wrap: wrap; max-height: 140px; }
+  .properties { width: 100%; min-width: 0; flex-direction: row; flex-wrap: wrap; max-height: 160px; }
+  .canvas-container { min-height: 300px; }
+  canvas { max-width: 95vw; max-height: 50vh; }
+}
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="logo">🎨 <span>图片合成器</span></div>
+  <div class="actions">
+    <button class="btn-outline" id="btnUndo" onclick="undo()" title="撤销 (Ctrl+Z)" disabled>↩</button>
+    <button class="btn-outline" id="btnRedo" onclick="redo()" title="重做 (Ctrl+Shift+Z)" disabled>↪</button>
+    <button class="btn-outline" onclick="resetAll()" title="清除所有">🔄 重置</button>
+    <select id="exportFormat" onchange="onExportFormatChange()" style="background:#252540;color:#ccc;border:1px solid #444;border-radius:6px;padding:6px 8px;font-size:12px;cursor:pointer;outline:none;">
+      <option value="png">PNG</option>
+      <option value="jpeg">JPEG</option>
+      <option value="webp">WebP</option>
+    </select>
+    <span id="exportQualityWrap" style="display:none;display:flex;align-items:center;gap:4px;">
+      <input type="range" id="exportQuality" min="10" max="100" value="90" style="width:60px;accent-color:#7c8cf8;" oninput="document.getElementById('exportQualityVal').textContent=this.value+'%'">
+      <span id="exportQualityVal" style="font-size:11px;color:#aaa;min-width:32px;">90%</span>
+    </span>
+    <button class="btn-primary" onclick="downloadResult()" title="下载合成图片">⬇ 下载</button>
+  </div>
+</div>
+
+<!-- Main Content -->
+<div class="main">
+
+  <!-- Left: Sticker Library -->
+  <div class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-title">📦 我的贴图</div>
+      <div class="emoji-grid" id="custom-stickers-grid"></div>
+      <div class="upload-sticker-btn" onclick="document.getElementById('stickerUpload').click()">
+        ➕ 上传贴图
+      </div>
+      <input type="file" id="stickerUpload" accept="image/png,image/webp,image/jpeg" hidden onchange="handleStickerUpload(event)">
+    </div>
+  </div>
+
+  <!-- Center: Canvas -->
+  <div class="canvas-container" id="canvasContainer"
+       ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
+    <div class="canvas-wrapper" id="canvasWrapper">
+      <canvas id="mainCanvas"></canvas>
+      <div class="drop-zone-overlay" id="dropZone">
+        <div class="drop-zone-text">
+          <span class="icon">📁</span>
+          拖拽图片到此处<br>或点击下方按钮
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: Properties -->
+  <div class="properties" id="propertiesPanel">
+    <!-- Layer panel -->
+    <div id="layerPanel" style="display:none;">
+      <div class="prop-group-title" style="padding:8px 4px 4px;">📑 图层</div>
+      <div id="layerList" style="display:flex;flex-direction:column;gap:3px;max-height:200px;overflow-y:auto;"></div>
+    </div>
+
+    <div class="placeholder-text" id="noSelectionHint">
+      👆 选择左侧贴图添加到画布<br><br>
+      或上传一张底图开始
+    </div>
+
+    <div id="stickerProps" style="display:none;">
+      <div class="prop-group">
+        <div class="prop-group-title">📐 变换</div>
+        <div class="prop-row">
+          <span class="prop-label">缩放</span>
+          <input type="range" id="propScale" min="10" max="300" value="100" oninput="onPropChange()">
+          <span class="prop-value" id="propScaleVal">100%</span>
+        </div>
+        <div class="prop-row">
+          <span class="prop-label">旋转</span>
+          <input type="range" id="propRotate" min="-180" max="180" value="0" oninput="onPropChange()">
+          <span class="prop-value" id="propRotateVal">0°</span>
+        </div>
+        <div class="prop-row">
+          <span class="prop-label">透明度</span>
+          <input type="range" id="propOpacity" min="10" max="100" value="100" oninput="onPropChange()">
+          <span class="prop-value" id="propOpacityVal">100%</span>
+        </div>
+        <div class="prop-row">
+          <span class="prop-label">镜像</span>
+          <button class="btn-outline" id="btnFlipH" style="flex:1;font-size:11px;padding:4px 8px;" onclick="flipStickerH()">↔ 水平</button>
+          <button class="btn-outline" id="btnFlipV" style="flex:1;font-size:11px;padding:4px 8px;" onclick="flipStickerV()">↕ 垂直</button>
+        </div>
+        <div class="prop-row">
+          <span class="prop-label">图层</span>
+          <button class="btn-outline" style="flex:1;font-size:11px;padding:4px 8px;" onclick="moveStickerUp()">⬆ 上移</button>
+          <button class="btn-outline" style="flex:1;font-size:11px;padding:4px 8px;" onclick="moveStickerDown()">⬇ 下移</button>
+        </div>
+        <button class="btn-danger" style="width:100%;margin-top:4px;padding:6px;font-size:12px;" onclick="deleteSelectedSticker()">🗑 删除贴图</button>
+      </div>
+
+      <div class="prop-group">
+        <div class="prop-group-title">🔮 贴图融合</div>
+        <div class="prop-row">
+          <span class="prop-label">光源角度</span>
+          <input type="range" id="propLightAngle" min="0" max="360" value="135" oninput="onLightAngleChange()">
+          <span class="prop-value" id="propLightAngleVal">135°</span>
+        </div>
+        <div class="prop-row">
+          <span class="prop-label">曝光匹配</span>
+          <input type="range" id="propBlendStrength" min="5" max="100" value="25">
+        </div>
+        <div class="prop-row">
+          <span class="prop-label">边缘柔化</span>
+          <input type="range" id="propFeather" min="0" max="30" value="10">
+          <span class="prop-value" id="propFeatherVal">10</span>
+        </div>
+        <div class="prop-row" style="margin-top:4px;">
+          <span class="prop-label">风格</span>
+          <select id="propStyle" onchange="onStyleChange()" style="flex:1;background:#1e1e36;color:#ccc;border:1px solid #3a3a5a;border-radius:5px;padding:5px 8px;font-size:11px;cursor:pointer;outline:none;">
+            <option value="auto">自动检测</option>
+            <option value="photo">写实照片</option>
+            <option value="anime">二次元/动漫</option>
+            <option value="sketch">黑白线稿/素描</option>
+            <option value="3d">3D渲染</option>
+          </select>
+        </div>
+        <div class="style-indicator" id="styleIndicator" style="display:none;font-size:11px;color:#7c8cf8;text-align:center;padding:3px 0;"></div>
+        <button class="btn-blend" id="btnBlend" onclick="autoBlend()" disabled>
+          ✨ 贴图融合
+        </button>
+        <button class="btn-outline" style="width:100%;margin-top:6px;padding:6px;font-size:12px;" onclick="resetStickerAdjustments()">
+          ↩ 撤销融合
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Hidden file input for background -->
+<input type="file" id="bgUpload" accept="image/*" hidden onchange="handleBgUpload(event)">
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- Bottom bar with quick actions (shown when no bg) -->
+<div id="bottomBar" style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:10;">
+  <button class="btn-primary" style="padding:12px 28px;font-size:15px;border-radius:10px;box-shadow:0 4px 20px rgba(124,140,248,0.4);"
+          onclick="document.getElementById('bgUpload').click()">
+    📁 上传底图
+  </button>
+</div>
+
+<script>
+// ==================== DATA ====================
+let customStickers = [];  // { id, name, dataUrl, thumb } — persisted in IndexedDB
+
+// ==================== STATE ====================
+let bgImage = null;              // HTMLImageElement of background
+let bgImageData = null;          // ImageData of background (for pixel sampling)
+let stickers = [];               // Array of sticker objects
+let selectedId = null;           // Currently selected sticker ID
+let stickerIdCounter = 0;
+let canvasScale = 1;             // Scale factor (bg original → canvas display)
+let bgOffsetX = 0, bgOffsetY = 0; // Background offset within canvas
+
+// Interaction state
+let interactionMode = null;      // 'move' | 'scale' | 'rotate' | null
+let dragStartMouse = null;       // {x, y} at mousedown
+let dragStartSticker = null;     // Snapshot of sticker at mousedown
+let dragCornerIndex = -1;        // Which corner (0=TL, 1=TR, 2=BR, 3=BL)
+
+const HANDLE_RADIUS = 8;
+const HANDLE_HIT_RADIUS = 12;
+
+// ==================== INIT ====================
+const canvas = document.getElementById('mainCanvas');
+const ctx = canvas.getContext('2d');
+const canvasWrapper = document.getElementById('canvasWrapper');
+
+// ==================== CUSTOM STICKER PERSISTENCE (IndexedDB) ====================
+const DB_NAME = 'image_blender_db';
+const DB_VERSION = 1;
+const STORE_NAME = 'stickers';
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+      }
+    };
+    request.onsuccess = (e) => resolve(e.target.result);
+    request.onerror = (e) => reject(e.target.error);
+  });
+}
+
+async function loadCustomStickers() {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const store = tx.objectStore(STORE_NAME);
+    const all = await new Promise((resolve, reject) => {
+      const req = store.getAll();
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    customStickers = all || [];
+    console.log('📦 IndexedDB 加载了 ' + customStickers.length + ' 个贴图');
+  } catch (e) {
+    console.error('❌ 加载贴图失败:', e);
+    customStickers = [];
+  }
+}
+
+async function saveCustomStickers() {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    store.clear();
+    for (const s of customStickers) {
+      store.put(s);
+    }
+    await new Promise((resolve, reject) => {
+      tx.oncomplete = () => {
+        console.log('💾 IndexedDB 保存了 ' + customStickers.length + ' 个贴图');
+        resolve();
+      };
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (e) {
+    console.error('❌ 保存贴图失败:', e);
+    showToast('❌ 保存失败，请重试');
+  }
+}
+
+// Resize an image from a data URL and return a new data URL via callback
+function resizeImageDataUrl(dataUrl, maxDim, callback) {
+  const img = new Image();
+  img.onload = () => {
+    try {
+      let w = img.naturalWidth, h = img.naturalHeight;
+      if (w > maxDim || h > maxDim) {
+        const s = Math.min(maxDim / w, maxDim / h);
+        w = Math.round(w * s);
+        h = Math.round(h * s);
+      }
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      c.getContext('2d').drawImage(img, 0, 0, w, h);
+      callback(c.toDataURL('image/png'));
+    } catch (e) {
+      console.error('缩略图生成失败:', e);
+      callback(dataUrl); // fallback to original
+    }
+  };
+  img.onerror = () => {
+    console.error('图片加载失败，使用原始 data URL');
+    callback(dataUrl);
+  };
+  img.src = dataUrl;
+}
+
+function renderCustomStickerGrid() {
+  const grid = document.getElementById('custom-stickers-grid');
+  if (!grid) return;
+  if (customStickers.length === 0) {
+    grid.innerHTML = '<div style="color:#555;font-size:12px;text-align:center;padding:12px;">暂无贴图<br>点击下方按钮上传</div>';
+    return;
+  }
+  grid.innerHTML = customStickers.map((s, idx) => `
+    <div class="emoji-btn" style="position:relative;overflow:hidden;" title="${s.name}" onclick="addCustomStickerById('${s.id}')">
+      <img src="${s.thumb || s.dataUrl}" style="width:100%;height:100%;object-fit:contain;" alt="${s.name}">
+      <span style="position:absolute;top:1px;right:2px;font-size:10px;cursor:pointer;opacity:0.6;background:rgba(0,0,0,0.5);border-radius:2px;padding:0 2px;"
+            onclick="event.stopPropagation();deleteCustomSticker('${s.id}')"
+            title="删除贴图">✕</span>
+    </div>
+  `).join('');
+}
+
+function addCustomStickerById(id) {
+  const sticker = customStickers.find(s => s.id === id);
+  if (!sticker) return;
+  const img = new Image();
+  img.onload = () => addImageSticker(img);
+  img.src = sticker.dataUrl; // Use full-res for canvas
+}
+
+function deleteCustomSticker(id) {
+  if (!confirm('确定删除这个贴图吗？')) return;
+  customStickers = customStickers.filter(s => s.id !== id);
+  saveCustomStickers();
+  renderCustomStickerGrid();
+  showToast('🗑 贴图已删除');
+}
+
+// ==================== CANVAS SETUP ====================
+function initCanvas(w, h) {
+  canvas.width = w;
+  canvas.height = h;
+  canvas.style.width = w + 'px';
+  canvas.style.height = h + 'px';
+}
+
+function fitBackgroundToCanvas(img) {
+  const maxW = Math.min(window.innerWidth - 520, 1200);
+  const maxH = Math.min(window.innerHeight - 120, 800);
+  let w = img.naturalWidth;
+  let h = img.naturalHeight;
+  if (w > maxW || h > maxH) {
+    const scale = Math.min(maxW / w, maxH / h);
+    w = Math.round(w * scale);
+    h = Math.round(h * scale);
+  }
+  return { w, h };
+}
+
+// ==================== RENDER ====================
+function render() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Draw background
+  if (bgImage) {
+    ctx.drawImage(bgImage, bgOffsetX, bgOffsetY, canvas.width, canvas.height);
+  } else {
+    // Draw placeholder
+    ctx.fillStyle = '#1a1a30';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+
+  // Draw stickers (back to front)
+  for (const sticker of stickers) {
+    drawSticker(sticker);
+  }
+
+  // Draw selection handles
+  if (selectedId) {
+    const sticker = stickers.find(s => s.id === selectedId);
+    if (sticker) drawSelectionHandles(sticker);
+  }
+
+  // Refresh layer panel (debounced via rAF to avoid thrashing during drag)
+  if (!render._layerScheduled) {
+    render._layerScheduled = true;
+    requestAnimationFrame(() => {
+      renderLayerPanel();
+      render._layerScheduled = false;
+    });
+  }
+}
+
+function drawSticker(sticker) {
+  ctx.save();
+  ctx.translate(sticker.x, sticker.y);
+
+  const img = sticker.adjustedImage || sticker.image;
+  const w = sticker.width;
+  const h = sticker.height;
+
+  // Build flip scales
+  const sx = sticker.flipH ? -1 : 1;
+  const sy = sticker.flipV ? -1 : 1;
+
+  // Draw shadow using screen-space offset (shadow falls AWAY from light source)
+  if (sticker.shadowEnabled && sticker.shadowCanvas) {
+    ctx.save();
+    // Shadow opacity: use per-sticker strength if set, otherwise default
+    const shadowAlpha = (sticker.shadowOpacity || 0.3) * sticker.opacity;
+    ctx.globalAlpha = shadowAlpha;
+    // Shadow offset is in screen space (pre-computed during blend)
+    ctx.translate(sticker.shadowOffsetX || 0, sticker.shadowOffsetY || 0);
+    // Shadow silhouette rotates with the sticker AND mirrors with it
+    ctx.rotate(sticker.rotation * Math.PI / 180);
+    ctx.scale(sx, sy);
+    const sCanvas = sticker.shadowCanvas;
+    const sw = sCanvas.width;
+    const sh = sCanvas.height;
+    ctx.drawImage(sCanvas, -sw/2, -sh/2, sw, sh);
+    ctx.restore();
+  }
+
+  // Draw sticker with rotation + mirror
+  ctx.rotate(sticker.rotation * Math.PI / 180);
+  ctx.scale(sx, sy);
+  ctx.globalAlpha = sticker.opacity;
+  ctx.drawImage(img, -w/2, -h/2, w, h);
+
+  // Selection indicator
+  if (sticker.id === selectedId) {
+    ctx.strokeStyle = 'rgba(124,140,248,0.6)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4, 3]);
+    ctx.strokeRect(-w/2 - 2, -h/2 - 2, w + 4, h + 4);
+    ctx.setLineDash([]);
+  }
+
+  ctx.restore();
+}
+
+function drawSelectionHandles(sticker) {
+  ctx.save();
+  ctx.translate(sticker.x, sticker.y);
+  ctx.rotate(sticker.rotation * Math.PI / 180);
+  const w = sticker.width;
+  const h = sticker.height;
+
+  // Corner handles
+  const corners = [
+    [-w/2, -h/2], [w/2, -h/2], [w/2, h/2], [-w/2, h/2]
+  ];
+
+  ctx.fillStyle = '#fff';
+  ctx.strokeStyle = '#7c8cf8';
+  ctx.lineWidth = 2;
+  for (const [cx, cy] of corners) {
+    ctx.fillRect(cx - HANDLE_RADIUS/2, cy - HANDLE_RADIUS/2, HANDLE_RADIUS, HANDLE_RADIUS);
+    ctx.strokeRect(cx - HANDLE_RADIUS/2, cy - HANDLE_RADIUS/2, HANDLE_RADIUS, HANDLE_RADIUS);
+  }
+
+  // Rotation handle
+  const rotHandleY = -h/2 - 30;
+  ctx.beginPath();
+  ctx.moveTo(0, -h/2);
+  ctx.lineTo(0, rotHandleY);
+  ctx.strokeStyle = '#7c8cf8';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([3, 3]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Rotation circle
+  ctx.beginPath();
+  ctx.arc(0, rotHandleY, HANDLE_RADIUS/2 + 2, 0, Math.PI * 2);
+  ctx.fillStyle = '#7c8cf8';
+  ctx.fill();
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+// ==================== STICKER MANAGEMENT ====================
+// Load image from file
+function fileToImage(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function addImageSticker(img) {
+  if (!bgImage && stickers.length === 0) {
+    // Allow image sticker as first element if no bg
+  }
+
+  const maxDim = 200;
+  let w = img.naturalWidth;
+  let h = img.naturalHeight;
+  if (w > maxDim || h > maxDim) {
+    const s = Math.min(maxDim / w, maxDim / h);
+    w = Math.round(w * s);
+    h = Math.round(h * s);
+  }
+
+  const sticker = {
+    id: 'sticker_' + (++stickerIdCounter),
+    type: 'image',
+    image: img,
+    originalImage: img,
+    x: canvas.width / 2,
+    y: canvas.height / 2,
+    width: w,
+    height: h,
+    rotation: 0,
+    opacity: 1,
+    flipH: false,
+    flipV: false,
+    shadowEnabled: false,
+    shadowCanvas: null,
+    shadowOffsetX: 0,
+    shadowOffsetY: 0,
+    adjustedImage: null,
+    adjustments: null,
+  };
+
+  saveUndo();
+  stickers.push(sticker);
+  selectSticker(sticker.id);
+  render();
+  hideDropZone();
+}
+
+function selectSticker(id) {
+  selectedId = id;
+  document.getElementById('noSelectionHint').style.display = 'none';
+  document.getElementById('stickerProps').style.display = '';
+  document.getElementById('bottomBar').style.display = 'none';
+  document.getElementById('btnBlend').disabled = !bgImage;
+
+  const sticker = stickers.find(s => s.id === id);
+  if (!sticker) return;
+
+  // Update property sliders (suppress oninput)
+  document.getElementById('propScale').value = Math.round(sticker.width / sticker.originalImage.naturalWidth * 100);
+  document.getElementById('propScaleVal').textContent = Math.round(sticker.width / sticker.originalImage.naturalWidth * 100) + '%';
+  document.getElementById('propRotate').value = Math.round(sticker.rotation);
+  document.getElementById('propRotateVal').textContent = Math.round(sticker.rotation) + '°';
+  document.getElementById('propOpacity').value = Math.round(sticker.opacity * 100);
+  document.getElementById('propOpacityVal').textContent = Math.round(sticker.opacity * 100) + '%';
+
+  updateFlipButtons(sticker);
+
+  render();
+}
+
+function deselectAll() {
+  selectedId = null;
+  document.getElementById('noSelectionHint').style.display = '';
+  document.getElementById('stickerProps').style.display = 'none';
+  if (!bgImage) document.getElementById('bottomBar').style.display = '';
+  render();
+}
+
+function deleteSelectedSticker() {
+  if (!selectedId) return;
+  saveUndo();
+  stickers = stickers.filter(s => s.id !== selectedId);
+  selectedId = null;
+  if (stickers.length > 0) {
+    selectSticker(stickers[stickers.length - 1].id);
+  } else {
+    deselectAll();
+  }
+  render();
+}
+
+function moveStickerUp() {
+  if (!selectedId) return;
+  const idx = stickers.findIndex(s => s.id === selectedId);
+  if (idx < stickers.length - 1) {
+    saveUndo();
+    [stickers[idx], stickers[idx + 1]] = [stickers[idx + 1], stickers[idx]];
+    render();
+  }
+}
+
+function moveStickerDown() {
+  if (!selectedId) return;
+  const idx = stickers.findIndex(s => s.id === selectedId);
+  if (idx > 0) {
+    saveUndo();
+    [stickers[idx], stickers[idx - 1]] = [stickers[idx - 1], stickers[idx]];
+    render();
+  }
+}
+
+function flipStickerH() {
+  if (!selectedId) return;
+  saveUndo();
+  const sticker = stickers.find(s => s.id === selectedId);
+  if (!sticker) return;
+  sticker.flipH = !sticker.flipH;
+  updateFlipButtons(sticker);
+  render();
+}
+
+function flipStickerV() {
+  if (!selectedId) return;
+  saveUndo();
+  const sticker = stickers.find(s => s.id === selectedId);
+  if (!sticker) return;
+  sticker.flipV = !sticker.flipV;
+  updateFlipButtons(sticker);
+  render();
+}
+
+function updateFlipButtons(sticker) {
+  const btnH = document.getElementById('btnFlipH');
+  const btnV = document.getElementById('btnFlipV');
+  if (btnH) btnH.style.background = sticker.flipH ? '#7c8cf8' : '';
+  if (btnV) btnV.style.background = sticker.flipV ? '#7c8cf8' : '';
+}
+
+// ==================== LAYER PANEL ====================
+let layerDragIdx = -1;
+
+function renderLayerPanel() {
+  const panel = document.getElementById('layerPanel');
+  const list = document.getElementById('layerList');
+  if (!panel || !list) return;
+
+  if (stickers.length === 0) {
+    panel.style.display = 'none';
+    return;
+  }
+  panel.style.display = '';
+
+  // Render in reverse: top layer (last in array) shown first in UI
+  list.innerHTML = '';
+  for (let i = stickers.length - 1; i >= 0; i--) {
+    const s = stickers[i];
+    const isSel = s.id === selectedId;
+    const imgSrc = s.image ? s.image.src : '';
+    const dims = Math.round(s.width) + '×' + Math.round(s.height);
+    const extra = [];
+    if (s.flipH) extra.push('↔');
+    if (s.flipV) extra.push('↕');
+    if (s.adjustments) extra.push('✨');
+    const label = extra.length ? extra.join('') + ' ' + dims : dims;
+
+    const div = document.createElement('div');
+    div.className = 'layer-item' + (isSel ? ' selected' : '');
+    div.draggable = true;
+    div.dataset.idx = i;
+    div.title = '拖拽排序 | 点击选中';
+    div.innerHTML = `
+      <img class="layer-thumb" src="${imgSrc}" alt="">
+      <div class="layer-info">
+        <div class="layer-name">图层 ${stickers.length - i}</div>
+        <div class="layer-detail">${label}</div>
+      </div>
+      <div class="layer-actions">
+        <button class="layer-btn" title="上移一层" onclick="event.stopPropagation();moveStickerUp();">▲</button>
+        <button class="layer-btn" title="下移一层" onclick="event.stopPropagation();moveStickerDown();">▼</button>
+      </div>`;
+
+    div.addEventListener('click', () => {
+      if (s.id === selectedId) deselectAll();
+      else selectSticker(s.id);
+    });
+
+    div.addEventListener('dragstart', (e) => {
+      layerDragIdx = i;
+      div.style.opacity = '0.4';
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    div.addEventListener('dragend', () => {
+      div.style.opacity = '1';
+      document.querySelectorAll('.layer-item').forEach(el => el.classList.remove('drag-over'));
+      layerDragIdx = -1;
+    });
+    div.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      div.classList.add('drag-over');
+    });
+    div.addEventListener('dragleave', () => {
+      div.classList.remove('drag-over');
+    });
+    div.addEventListener('drop', (e) => {
+      e.preventDefault();
+      div.classList.remove('drag-over');
+      if (layerDragIdx < 0 || layerDragIdx === i) return;
+      saveUndo();
+      const moved = stickers.splice(layerDragIdx, 1)[0];
+      stickers.splice(i, 0, moved);
+      render();
+      renderLayerPanel();
+    });
+
+    list.appendChild(div);
+  }
+}
+
+// ==================== PROPERTY SLIDERS ====================
+function onPropChange() {
+  if (!selectedId) return;
+  const sticker = stickers.find(s => s.id === selectedId);
+  if (!sticker) return;
+
+  const origW = sticker.originalImage.naturalWidth;
+  const scaleVal = parseInt(document.getElementById('propScale').value) / 100;
+  const newW = Math.round(origW * scaleVal);
+  const newH = Math.round(origW * scaleVal * (sticker.originalImage.naturalHeight / sticker.originalImage.naturalWidth));
+
+  sticker.width = newW;
+  sticker.height = newH;
+  sticker.rotation = parseInt(document.getElementById('propRotate').value);
+  sticker.opacity = parseInt(document.getElementById('propOpacity').value) / 100;
+
+  document.getElementById('propScaleVal').textContent = Math.round(scaleVal * 100) + '%';
+  document.getElementById('propRotateVal').textContent = Math.round(sticker.rotation) + '°';
+  document.getElementById('propOpacityVal').textContent = Math.round(sticker.opacity * 100) + '%';
+
+  render();
+}
+
+function onLightAngleChange() {
+  const ang = document.getElementById('propLightAngle').value;
+  document.getElementById('propLightAngleVal').textContent = ang + '°';
+}
+
+function onStyleChange() {
+  const val = document.getElementById('propStyle').value;
+  if (val === 'auto') {
+    userStyleOverride = null;
+    updateStyleIndicator();
+    return;
+  }
+  userStyleOverride = val;
+  const preset = getStylePreset(val);
+  document.getElementById('propFeather').value = preset.feather;
+  document.getElementById('propFeatherVal').textContent = preset.feather;
+  document.getElementById('propBlendStrength').value = preset.exposure;
+  updateStyleIndicator();
+}
+
+// ==================== CANVAS INTERACTION ====================
+canvas.addEventListener('mousedown', onMouseDown);
+canvas.addEventListener('mousemove', onMouseMove);
+canvas.addEventListener('mouseup', onMouseUp);
+canvas.addEventListener('mouseleave', onMouseUp);
+canvas.addEventListener('wheel', onWheel);
+
+// Touch support
+canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+canvas.addEventListener('touchend', onTouchEnd);
+
+function getCanvasPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: e.clientX - rect.left,
+    y: e.clientY - rect.top
+  };
+}
+
+function hitTestSticker(pos) {
+  // Check in reverse order (top of z-order first)
+  for (let i = stickers.length - 1; i >= 0; i--) {
+    const s = stickers[i];
+    if (pointInSticker(pos.x, pos.y, s)) {
+      return s.id;
+    }
+  }
+  return null;
+}
+
+function pointInSticker(px, py, sticker) {
+  // Transform to local coordinates
+  const dx = px - sticker.x;
+  const dy = py - sticker.y;
+  const rad = -sticker.rotation * Math.PI / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const lx = dx * cos - dy * sin;
+  const ly = dx * sin + dy * cos;
+  return Math.abs(lx) <= sticker.width / 2 && Math.abs(ly) <= sticker.height / 2;
+}
+
+function getHandleHit(pos, sticker) {
+  // Transform to local coordinates
+  const dx = pos.x - sticker.x;
+  const dy = pos.y - sticker.y;
+  const rad = -sticker.rotation * Math.PI / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const lx = dx * cos - dy * sin;
+  const ly = dx * sin + dy * cos;
+
+  const w = sticker.width, h = sticker.height;
+
+  // Check corner handles
+  const corners = [[-w/2, -h/2], [w/2, -h/2], [w/2, h/2], [-w/2, h/2]];
+  for (let i = 0; i < corners.length; i++) {
+    const [cx, cy] = corners[i];
+    if (Math.abs(lx - cx) < HANDLE_HIT_RADIUS && Math.abs(ly - cy) < HANDLE_HIT_RADIUS) {
+      return { type: 'corner', index: i };
+    }
+  }
+
+  // Check rotation handle
+  const rotY = -h/2 - 30;
+  if (Math.abs(lx) < HANDLE_HIT_RADIUS && Math.abs(ly - rotY) < HANDLE_HIT_RADIUS) {
+    return { type: 'rotation', index: -1 };
+  }
+
+  return null;
+}
+
+function onMouseDown(e) {
+  if (e.button !== 0) return;
+  const pos = getCanvasPos(e);
+
+  // Check if clicking on selected sticker's handles
+  if (selectedId) {
+    const sticker = stickers.find(s => s.id === selectedId);
+    if (sticker) {
+      const hit = getHandleHit(pos, sticker);
+      if (hit) {
+        saveUndo();
+        interactionMode = hit.type === 'corner' ? 'scale' : 'rotate';
+        dragStartMouse = pos;
+        dragStartSticker = { ...sticker, width: sticker.width, height: sticker.height, rotation: sticker.rotation, x: sticker.x, y: sticker.y };
+        dragCornerIndex = hit.index;
+        e.preventDefault();
+        return;
+      }
+      // Check if clicking on sticker body
+      if (pointInSticker(pos.x, pos.y, sticker)) {
+        saveUndo();
+        interactionMode = 'move';
+        dragStartMouse = pos;
+        dragStartSticker = { x: sticker.x, y: sticker.y };
+        e.preventDefault();
+        return;
+      }
+    }
+  }
+
+  // Check if clicking on any sticker
+  const hitId = hitTestSticker(pos);
+  if (hitId) {
+    selectSticker(hitId);
+    saveUndo();
+    const sticker = stickers.find(s => s.id === hitId);
+    interactionMode = 'move';
+    dragStartMouse = pos;
+    dragStartSticker = { x: sticker.x, y: sticker.y };
+    e.preventDefault();
+    return;
+  }
+
+  // Clicked empty space
+  deselectAll();
+  interactionMode = null;
+}
+
+function onMouseMove(e) {
+  const pos = getCanvasPos(e);
+
+  if (interactionMode === 'move') {
+    const dx = pos.x - dragStartMouse.x;
+    const dy = pos.y - dragStartMouse.y;
+    const sticker = stickers.find(s => s.id === selectedId);
+    if (sticker) {
+      sticker.x = dragStartSticker.x + dx;
+      sticker.y = dragStartSticker.y + dy;
+      render();
+    }
+  } else if (interactionMode === 'scale') {
+    const sticker = stickers.find(s => s.id === selectedId);
+    if (sticker) {
+      // Vector from sticker center to mouse
+      const dx = pos.x - sticker.x;
+      const dy = pos.y - sticker.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      // Original distance from center to that corner
+      const origW = dragStartSticker.width;
+      const origH = dragStartSticker.height;
+      const origCornerDist = Math.sqrt((origW/2)**2 + (origH/2)**2);
+
+      const scale = Math.max(0.1, Math.min(5, dist / origCornerDist));
+      const newW = Math.round(origW * scale);
+      const newH = Math.round(origH * scale);
+      sticker.width = newW;
+      sticker.height = newH;
+
+      // Update slider
+      const origImgW = sticker.originalImage.naturalWidth;
+      document.getElementById('propScale').value = Math.round(newW / origImgW * 100);
+      document.getElementById('propScaleVal').textContent = Math.round(newW / origImgW * 100) + '%';
+
+      render();
+    }
+  } else if (interactionMode === 'rotate') {
+    const sticker = stickers.find(s => s.id === selectedId);
+    if (sticker) {
+      const dx = pos.x - sticker.x;
+      const dy = pos.y - sticker.y;
+      const angle = Math.atan2(dy, dx) * 180 / Math.PI + 90;
+      sticker.rotation = angle;
+
+      document.getElementById('propRotate').value = Math.round(angle);
+      document.getElementById('propRotateVal').textContent = Math.round(angle) + '°';
+
+      render();
+    }
+  } else {
+    // Update cursor
+    if (selectedId) {
+      const sticker = stickers.find(s => s.id === selectedId);
+      if (sticker) {
+        const hit = getHandleHit(pos, sticker);
+        if (hit) {
+          canvas.style.cursor = hit.type === 'corner' ? 'nwse-resize' : 'grab';
+        } else if (pointInSticker(pos.x, pos.y, sticker)) {
+          canvas.style.cursor = 'move';
+        } else {
+          canvas.style.cursor = 'crosshair';
+        }
+      }
+    } else {
+      const hitId = hitTestSticker(pos);
+      canvas.style.cursor = hitId ? 'pointer' : 'crosshair';
+    }
+  }
+}
+
+function onMouseUp(e) {
+  if (interactionMode) {
+    // Invalidate cached adjustments if sticker was moved/resized/rotated
+    if (selectedId && (interactionMode === 'move' || interactionMode === 'scale' || interactionMode === 'rotate')) {
+      const sticker = stickers.find(s => s.id === selectedId);
+      if (sticker && sticker.adjustments) {
+        // Don't invalidate, user can still use the adjusted image
+      }
+    }
+  }
+  interactionMode = null;
+  dragStartMouse = null;
+  dragStartSticker = null;
+  dragCornerIndex = -1;
+  canvas.style.cursor = 'crosshair';
+}
+
+function onWheel(e) {
+  if (selectedId) {
+    const sticker = stickers.find(s => s.id === selectedId);
+    if (sticker && pointInSticker(e.offsetX, e.offsetY, sticker)) {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? 0.95 : 1.05;
+      sticker.width = Math.max(10, Math.round(sticker.width * delta));
+      sticker.height = Math.max(10, Math.round(sticker.height * delta));
+
+      const origW = sticker.originalImage.naturalWidth;
+      document.getElementById('propScale').value = Math.round(sticker.width / origW * 100);
+      document.getElementById('propScaleVal').textContent = Math.round(sticker.width / origW * 100) + '%';
+      render();
+    }
+  }
+}
+
+// Touch handlers
+function onTouchStart(e) {
+  if (e.touches.length === 1) {
+    // Single touch - synthesize mouse event
+    const touch = e.touches[0];
+    const mouseEvent = { button: 0, clientX: touch.clientX, clientY: touch.clientY, preventDefault: () => {} };
+    onMouseDown(mouseEvent);
+    e.preventDefault();
+  } else if (e.touches.length === 2 && selectedId) {
+    // Pinch to scale
+    interactionMode = 'pinch';
+    const t1 = e.touches[0], t2 = e.touches[1];
+    dragStartSticker = {
+      dist: Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY),
+      width: stickers.find(s => s.id === selectedId).width,
+    };
+    e.preventDefault();
+  }
+}
+
+function onTouchMove(e) {
+  if (interactionMode === 'pinch' && e.touches.length === 2 && selectedId) {
+    const t1 = e.touches[0], t2 = e.touches[1];
+    const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+    const scale = dist / dragStartSticker.dist;
+    const sticker = stickers.find(s => s.id === selectedId);
+    sticker.width = Math.max(10, Math.round(dragStartSticker.width * scale));
+    sticker.height = Math.max(10, Math.round(dragStartSticker.width * scale * (sticker.height / sticker.width || 1)));
+    render();
+    e.preventDefault();
+  } else if (interactionMode && e.touches.length === 1) {
+    const touch = e.touches[0];
+    onMouseMove({ clientX: touch.clientX, clientY: touch.clientY });
+    e.preventDefault();
+  }
+}
+
+function onTouchEnd(e) {
+  onMouseUp({});
+}
+
+// ==================== UPLOAD HANDLERS ====================
+async function handleBgUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  try {
+    const img = await fileToImage(file);
+    bgImage = img;
+    const dims = fitBackgroundToCanvas(img);
+    initCanvas(dims.w, dims.h);
+
+    // Extract background pixel data for analysis
+    ctx.drawImage(img, 0, 0, dims.w, dims.h);
+    bgImageData = ctx.getImageData(0, 0, dims.w, dims.h);
+
+    hideDropZone();
+    document.getElementById('bottomBar').style.display = 'none';
+    document.getElementById('btnBlend').disabled = !selectedId;
+    render();
+
+    // Auto-detect background style
+    setTimeout(() => {
+      try {
+        detectedStyle = detectImageStyle(bgImage);
+        updateStyleIndicator();
+      } catch (e) { console.warn('风格检测失败:', e); }
+    }, 50);
+
+    showToast('✅ 底图已加载，点击左侧贴图开始编辑');
+  } catch (err) {
+    showToast('❌ 图片加载失败，请重试');
+    console.error(err);
+  }
+  event.target.value = '';
+}
+
+async function handleStickerUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  try {
+    const img = await fileToImage(file);
+    const originalDataUrl = img.src;
+    const name = file.name.replace(/\.[^.]+$/, '');
+    const id = 'custom_' + Date.now();
+
+    // Step 1: Resize to 400px for canvas use (keeps quality, small file size ~50-100KB)
+    resizeImageDataUrl(originalDataUrl, 400, (dataUrl400) => {
+      // Step 2: Create 128px thumbnail for grid display (~10-20KB)
+      resizeImageDataUrl(dataUrl400, 128, (thumb128) => {
+        const stickerEntry = { id, name, dataUrl: dataUrl400, thumb: thumb128 };
+        customStickers.push(stickerEntry);
+        saveCustomStickers();
+        renderCustomStickerGrid();
+        console.log('💾 贴图已保存:', name, '400px=' + (dataUrl400.length/1024).toFixed(0) + 'KB', '128px=' + (thumb128.length/1024).toFixed(0) + 'KB');
+        showToast('✅ 贴图已添加并保存');
+      });
+    });
+
+    // Also add to canvas right now (uses the already-loaded original image)
+    await addImageSticker(img);
+  } catch (err) {
+    showToast('❌ 贴图加载失败');
+    console.error(err);
+  }
+  event.target.value = '';
+}
+
+function handleDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'copy';
+}
+
+function handleDragLeave(e) {
+  // No-op
+}
+
+async function handleDrop(e) {
+  e.preventDefault();
+  const file = e.dataTransfer.files[0];
+  if (!file || !file.type.startsWith('image/')) {
+    showToast('⚠️ 请拖入图片文件');
+    return;
+  }
+  try {
+    const img = await fileToImage(file);
+
+    // If no background yet, use as background
+    if (!bgImage) {
+      bgImage = img;
+      const dims = fitBackgroundToCanvas(img);
+      initCanvas(dims.w, dims.h);
+      ctx.drawImage(img, 0, 0, dims.w, dims.h);
+      bgImageData = ctx.getImageData(0, 0, dims.w, dims.h);
+      hideDropZone();
+      document.getElementById('bottomBar').style.display = 'none';
+      render();
+
+      // Auto-detect background style
+      setTimeout(() => {
+        try {
+          detectedStyle = detectImageStyle(bgImage);
+          updateStyleIndicator();
+        } catch (e) { console.warn('风格检测失败:', e); }
+      }, 50);
+
+      showToast('✅ 底图已加载，点击左侧贴图开始编辑');
+    } else {
+      // Use as sticker - also save to library
+      const originalDataUrl = img.src;
+      const name = file.name.replace(/\.[^.]+$/, '');
+      const id = 'custom_' + Date.now();
+      const exists = customStickers.some(s => s.name === name);
+      if (!exists) {
+        resizeImageDataUrl(originalDataUrl, 400, (dataUrl400) => {
+          resizeImageDataUrl(dataUrl400, 128, (thumb128) => {
+            customStickers.push({ id, name, dataUrl: dataUrl400, thumb: thumb128 });
+            saveCustomStickers();
+            renderCustomStickerGrid();
+          });
+        });
+      }
+      await addImageSticker(img);
+      showToast('✅ 贴图已添加');
+    }
+  } catch (err) {
+    showToast('❌ 图片加载失败');
+    console.error(err);
+  }
+}
+
+function hideDropZone() {
+  document.getElementById('dropZone').style.display = 'none';
+}
+
+// ==================== AUTO BLEND ====================
+function autoBlend() {
+  if (!selectedId || !bgImage) return;
+  saveUndo();
+  const sticker = stickers.find(s => s.id === selectedId);
+  if (!sticker) return;
+
+  // Determine effective style
+  const styleKey = userStyleOverride || (detectedStyle ? detectedStyle.style : 'photo');
+  const stylePreset = getStylePreset(styleKey);
+
+  const blendStrength = parseInt(document.getElementById('propBlendStrength').value) / 100;
+  const featherAmount = parseInt(document.getElementById('propFeather').value);
+  const manualLightAngle = parseInt(document.getElementById('propLightAngle').value);
+
+  // Quick analysis of background and sticker (lightweight)
+  const bg = analyzeBackgroundRegion(sticker);
+  const st = analyzeStickerImage(sticker);
+
+  if (bg.count < 10 || st.count < 10) {
+    showToast('⚠️ 采样点不足，请确保贴纸在底图范围内');
+    return;
+  }
+
+  // Apply style-aware blend
+  applyAutoBlend(sticker, bg, st, {
+    blendStrength,
+    featherAmount,
+    lightAngle: manualLightAngle,
+    stylePreset,
+  });
+
+  sticker.adjustments = {
+    blendStrength,
+    featherAmount,
+    lightAngle: manualLightAngle,
+    style: styleKey,
+    bgLuminance: bg.meanL,
+    stickerLuminance: st.meanL,
+    autoLightAngle: bg.lightAngle,
+  };
+
+  // Update light angle slider to show auto-detected value
+  document.getElementById('propLightAngle').value = Math.round(bg.lightAngle);
+  document.getElementById('propLightAngleVal').textContent = Math.round(bg.lightAngle) + '°';
+
+  document.getElementById('btnBlend').textContent = '✅ 融合完成';
+  setTimeout(() => { document.getElementById('btnBlend').textContent = '✨ 贴图融合'; }, 1500);
+
+  render();
+  const presetLabel = stylePreset.label;
+  showToast('✅ ' + presetLabel + '风格融合完成');
+}
+
+function analyzeBackgroundRegion(sticker) {
+  // Re-extract background pixel data
+  const tempCanvas = document.createElement('canvas');
+  tempCanvas.width = canvas.width;
+  tempCanvas.height = canvas.height;
+  const tempCtx = tempCanvas.getContext('2d');
+  tempCtx.drawImage(bgImage, 0, 0, canvas.width, canvas.height);
+  const bgData = tempCtx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = bgData.data;
+  const imgW = bgData.width;
+  const imgH = bgData.height;
+
+  const cx = sticker.x, cy = sticker.y;
+  // Sample a LARGER area (1.4x) to capture surrounding context, not just what's under the sticker
+  const sampleRadius = Math.max(sticker.width, sticker.height) * 0.7;
+  const step = 4;
+
+  let totalL = 0, totalR = 0, totalG = 0, totalB = 0, count = 0;
+  let totalSat = 0;
+  const samples = [];
+
+  // Also track per-quadrant brightness for gradient detection
+  let quadTL = 0, quadTR = 0, quadBL = 0, quadBR = 0;
+  let qcTL = 0, qcTR = 0, qcBL = 0, qcBR = 0;
+
+  for (let dy = -sampleRadius; dy <= sampleRadius; dy += step) {
+    for (let dx = -sampleRadius; dx <= sampleRadius; dx += step) {
+      if (dx*dx + dy*dy > sampleRadius*sampleRadius) continue;
+      const sx = Math.round(cx + dx);
+      const sy = Math.round(cy + dy);
+      if (sx < 0 || sy < 0 || sx >= imgW || sy >= imgH) continue;
+      const i = (sy * imgW + sx) * 4;
+      const r = data[i], g = data[i+1], b = data[i+2];
+      const l = 0.299 * r + 0.587 * g + 0.114 * b;
+      const sat = Math.max(r,g,b) - Math.min(r,g,b);
+      totalL += l; totalR += r; totalG += g; totalB += b;
+      totalSat += sat;
+      samples.push({ l, r, g, b, sat, sx, sy });
+
+      // Quadrant tracking (relative to sticker center)
+      if (dx <= 0 && dy <= 0) { quadTL += l; qcTL++; }
+      else if (dx > 0 && dy <= 0) { quadTR += l; qcTR++; }
+      else if (dx <= 0 && dy > 0) { quadBL += l; qcBL++; }
+      else { quadBR += l; qcBR++; }
+      count++;
+    }
+  }
+
+  if (count < 10) {
+    return { meanL: 128, stdL: 40, meanR: 128, meanG: 128, meanB: 128, meanSat: 30,
+             stdSat: 20, lightAngle: 135, colorTemp: 0, count: 0, gradH: 0, gradV: 0 };
+  }
+
+  const meanL = totalL / count;
+  const meanR = totalR / count;
+  const meanG = totalG / count;
+  const meanB = totalB / count;
+  const meanSat = totalSat / count;
+
+  let varL = 0, varSat = 0;
+  for (const s of samples) {
+    varL += (s.l - meanL) ** 2;
+    varSat += (s.sat - meanSat) ** 2;
+  }
+  const stdL = Math.sqrt(varL / count);
+  const stdSat = Math.sqrt(varSat / count);
+
+  const colorTemp = (meanR - meanB) / Math.max(meanR + meanB, 1) * 100;
+
+  // === Horizontal & vertical brightness gradient across the sticker ===
+  const qTL = qcTL > 0 ? quadTL/qcTL : meanL;
+  const qTR = qcTR > 0 ? quadTR/qcTR : meanL;
+  const qBL = qcBL > 0 ? quadBL/qcBL : meanL;
+  const qBR = qcBR > 0 ? quadBR/qcBR : meanL;
+
+  // Horizontal gradient: right half - left half (positive = brighter on right)
+  const gradH = ((qTR + qBR) - (qTL + qBL)) / Math.max(2, sampleRadius * 2);
+  // Vertical gradient: bottom half - top half (positive = brighter at bottom)
+  const gradV = ((qBL + qBR) - (qTL + qTR)) / Math.max(2, sampleRadius * 2);
+
+  // === Full-image light direction analysis ===
+  const sparseStep = 20;
+  let gradFullX = 0, gradFullY = 0, gradCount = 0;
+  for (let y = sparseStep; y < imgH - sparseStep; y += sparseStep) {
+    for (let x = sparseStep; x < imgW - sparseStep; x += sparseStep) {
+      const i = (y * imgW + x) * 4;
+      const lHere = 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
+      const lRight = 0.299 * data[(y * imgW + (x + sparseStep)) * 4 + 0]
+                   + 0.587 * data[(y * imgW + (x + sparseStep)) * 4 + 1]
+                   + 0.114 * data[(y * imgW + (x + sparseStep)) * 4 + 2];
+      const lDown = 0.299 * data[((y + sparseStep) * imgW + x) * 4 + 0]
+                  + 0.587 * data[((y + sparseStep) * imgW + x) * 4 + 1]
+                  + 0.114 * data[((y + sparseStep) * imgW + x) * 4 + 2];
+      gradFullX += lRight - lHere;
+      gradFullY += lDown - lHere;
+      gradCount++;
+    }
+  }
+  const lightAngle = Math.atan2(-gradFullY, -gradFullX) * 180 / Math.PI;
+  const normalizedAngle = ((lightAngle % 360) + 360) % 360;
+
+  console.log('🔍 底图分析:', {
+    采样范围: `${Math.round(sampleRadius)}px`,
+    采样点数: count,
+    平均亮度: meanL.toFixed(1),
+    亮度范围: `±${stdL.toFixed(1)}`,
+    颜色: `R${meanR.toFixed(0)} G${meanG.toFixed(0)} B${meanB.toFixed(0)}`,
+    水平渐变: gradH > 0.5 ? '→右侧更亮' : gradH < -0.5 ? '→左侧更亮' : '均匀',
+    垂直渐变: gradV > 0.5 ? '→下方更亮' : gradV < -0.5 ? '→上方更亮' : '均匀',
+    光源: normalizedAngle.toFixed(0) + '°',
+  });
+
+  return { meanL, stdL, meanR, meanG, meanB, meanSat, stdSat,
+           lightAngle: normalizedAngle, colorTemp, count, gradH, gradV,
+           sampleRadius };
+}
+
+function analyzeStickerImage(sticker) {
+  const img = sticker.originalImage;
+  const imgW = img.naturalWidth;
+  const imgH = img.naturalHeight;
+  const offCanvas = document.createElement('canvas');
+  offCanvas.width = imgW;
+  offCanvas.height = imgH;
+  const offCtx = offCanvas.getContext('2d');
+  offCtx.drawImage(img, 0, 0);
+  const imageData = offCtx.getImageData(0, 0, imgW, imgH);
+  const data = imageData.data;
+
+  let totalL = 0, totalR = 0, totalG = 0, totalB = 0, opaqueCount = 0;
+  let totalSat = 0;
+  const samples = [];
+
+  const step = 2;
+  for (let i = 0; i < data.length; i += 4 * step) {
+    const a = data[i+3];
+    if (a < 10) continue;
+    const r = data[i], g = data[i+1], b = data[i+2];
+    const l = 0.299 * r + 0.587 * g + 0.114 * b;
+    const sat = Math.max(r,g,b) - Math.min(r,g,b);
+    totalL += l; totalR += r; totalG += g; totalB += b;
+    totalSat += sat;
+    samples.push({ l, r, g, b, sat });
+    opaqueCount++;
+  }
+
+  if (opaqueCount < 10) {
+    return { meanL: 128, stdL: 40, meanR: 128, meanG: 128, meanB: 128, meanSat: 30, count: 0 };
+  }
+
+  const meanL = totalL / opaqueCount;
+  const meanR = totalR / opaqueCount;
+  const meanG = totalG / opaqueCount;
+  const meanB = totalB / opaqueCount;
+  const meanSat = totalSat / opaqueCount;
+
+  let varL = 0;
+  for (const s of samples) varL += (s.l - meanL) ** 2;
+  const stdL = Math.sqrt(varL / opaqueCount);
+
+  console.log('🎯 贴纸分析:', {
+    采样点数: opaqueCount,
+    平均亮度: meanL.toFixed(1),
+    亮度标准差: stdL.toFixed(1),
+    平均颜色: `R${meanR.toFixed(0)} G${meanG.toFixed(0)} B${meanB.toFixed(0)}`,
+    平均饱和度: meanSat.toFixed(1),
+  });
+
+  return { meanL, stdL, meanR, meanG, meanB, meanSat, count: opaqueCount };
+}
+
+function getStickerBoundingRect(sticker) {
+  // Get bounding rect in canvas coordinates
+  const w = sticker.width, h = sticker.height;
+  const rad = sticker.rotation * Math.PI / 180;
+  const cos = Math.abs(Math.cos(rad));
+  const sin = Math.abs(Math.sin(rad));
+  const boundW = w * cos + h * sin;
+  const boundH = w * sin + h * cos;
+
+  return {
+    x: Math.max(0, Math.floor(sticker.x - boundW / 2)),
+    y: Math.max(0, Math.floor(sticker.y - boundH / 2)),
+    w: Math.min(canvas.width, Math.ceil(boundW)),
+    h: Math.min(canvas.height, Math.ceil(boundH)),
+  };
+}
+
+// Compute distance from each pixel to nearest transparent pixel (content edge)
+// Uses 2-pass distance transform (Manhattan + diagonal approximation)
+function computeEdgeDistance(data, w, h) {
+  const INF = 9999;
+  const dist = new Float32Array(w * h);
+
+  // Initialize: 0 for transparent/edge, INF for interior opaque
+  for (let i = 0; i < data.length; i += 4) {
+    const idx = i / 4;
+    const a = data[i + 3];
+    if (a < 10) {
+      dist[idx] = 0;
+      continue;
+    }
+    // Check if this pixel is at the content edge (adjacent to any transparent pixel)
+    const x = idx % w;
+    const y = Math.floor(idx / w);
+    let isEdge = false;
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= w || ny >= h) { isEdge = true; break; }
+        if (data[(ny * w + nx) * 4 + 3] < 10) { isEdge = true; break; }
+      }
+      if (isEdge) break;
+    }
+    dist[idx] = isEdge ? 1 : INF;
+  }
+
+  // Forward pass (top-left to bottom-right)
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const idx = y * w + x;
+      if (dist[idx] <= 1) continue;
+      let minD = dist[idx];
+      if (x > 0) minD = Math.min(minD, dist[y * w + (x - 1)] + 1);
+      if (y > 0) minD = Math.min(minD, dist[(y - 1) * w + x] + 1);
+      if (x > 0 && y > 0) minD = Math.min(minD, dist[(y - 1) * w + (x - 1)] + 1.4);
+      if (x < w - 1 && y > 0) minD = Math.min(minD, dist[(y - 1) * w + (x + 1)] + 1.4);
+      dist[idx] = minD;
+    }
+  }
+
+  // Backward pass (bottom-right to top-left)
+  for (let y = h - 1; y >= 0; y--) {
+    for (let x = w - 1; x >= 0; x--) {
+      const idx = y * w + x;
+      if (dist[idx] <= 1) continue;
+      let minD = dist[idx];
+      if (x < w - 1) minD = Math.min(minD, dist[y * w + (x + 1)] + 1);
+      if (y < h - 1) minD = Math.min(minD, dist[(y + 1) * w + x] + 1);
+      if (x < w - 1 && y < h - 1) minD = Math.min(minD, dist[(y + 1) * w + (x + 1)] + 1.4);
+      if (x > 0 && y < h - 1) minD = Math.min(minD, dist[(y + 1) * w + (x - 1)] + 1.4);
+      dist[idx] = minD;
+    }
+  }
+
+  return dist;
+}
+
+function applyAutoBlend(sticker, bg, st, params) {
+  const { blendStrength, featherAmount, lightAngle, stylePreset } = params;
+
+  // Get sticker pixel data at natural resolution
+  const img = sticker.originalImage;
+  const imgW = img.naturalWidth;
+  const imgH = img.naturalHeight;
+  const offCanvas = document.createElement('canvas');
+  offCanvas.width = imgW;
+  offCanvas.height = imgH;
+  const offCtx = offCanvas.getContext('2d');
+  offCtx.drawImage(img, 0, 0);
+  const imageData = offCtx.getImageData(0, 0, imgW, imgH);
+  const data = imageData.data;
+
+  // === Step 1: Compute content-aware edge distance ===
+  const edgeDist = computeEdgeDistance(data, imgW, imgH);
+
+  // Feather: 2–15 px range, controlled by featherAmount (0-30 → 2-15px)
+  const featherPx = 2 + Math.round(featherAmount * 13 / 30);
+
+  // === Subtle exposure compensation ===
+  // Only shift brightness slightly (max ~20% of the difference) so the sticker
+  // doesn't look like a glowing cutout on dark backgrounds or vanish on bright ones.
+  // blendStrength (10-100) maps to a max correction of 5%-25% of the BG/sticker gap.
+  const maxCorrection = 0.05 + (blendStrength / 100) * 0.20; // 5% to 25%
+  const lumDiff = bg.meanL - st.meanL;
+  // Clamp: never shift more than ±40 luminance points
+  const lumShift = Math.max(-40, Math.min(40, lumDiff * maxCorrection));
+
+  // Color temperature: very subtle warm/cool hint (max ±3)
+  const tempShift = (bg.meanR - bg.meanB) / 256 * maxCorrection * 3;
+
+  console.log('🎨 融合（保留贴图原色）:', {
+    羽化像素: featherPx,
+    曝光补偿: lumShift.toFixed(1) + ' / ' + lumDiff.toFixed(0) + ' 差距',
+    修正比例: (maxCorrection * 100).toFixed(0) + '%',
+    色温微调: tempShift.toFixed(1),
+  });
+
+  // === Step 2: Apply subtle adjustments + edge feather ===
+  for (let i = 0; i < data.length; i += 4) {
+    const a = data[i + 3];
+    if (a < 10) continue;
+
+    let r = data[i];
+    let g = data[i + 1];
+    let b = data[i + 2];
+
+    // Subtle exposure: scale RGB by luminance ratio (preserves hue)
+    const oldL = 0.299 * r + 0.587 * g + 0.114 * b;
+    const lRatio = oldL > 1 ? (oldL + lumShift) / oldL : 1;
+    r = Math.round(r * lRatio);
+    g = Math.round(g * lRatio);
+    b = Math.round(b * lRatio);
+
+    // Very subtle color temperature
+    r += tempShift;
+    b -= tempShift;
+
+    // Clamp
+    data[i]     = Math.max(0, Math.min(255, r));
+    data[i + 1] = Math.max(0, Math.min(255, g));
+    data[i + 2] = Math.max(0, Math.min(255, b));
+
+    // Edge feather: fade alpha near content edges
+    if (featherPx > 0) {
+      const dist = edgeDist[i / 4];
+      if (dist < featherPx) {
+        const t = dist / featherPx;
+        const smooth = t * t * (3 - 2 * t); // smoothstep
+        data[i + 3] = Math.round(a * smooth);
+      }
+    }
+  }
+
+  // Style-specific post-processing (applied to imageData before putImageData)
+  if (stylePreset) {
+    if (stylePreset.posterize && stylePreset.posterLv > 0) {
+      posterizeColors(imageData, stylePreset.posterLv);
+    }
+    if (stylePreset.desaturate && stylePreset.desatAmt > 0) {
+      desaturateImage(imageData, stylePreset.desatAmt);
+    }
+  }
+
+  // Put adjusted data back
+  offCtx.putImageData(imageData, 0, 0);
+
+  // Create adjusted image
+  const adjustedImg = new Image();
+  adjustedImg.src = offCanvas.toDataURL('image/png');
+  sticker.adjustedImage = adjustedImg;
+
+  // === Generate shadow ===
+  // Shadow casts AWAY from the bright area toward the dark area
+  const dispW = sticker.width;
+  const dispH = sticker.height;
+  const pad = Math.round(Math.max(dispW, dispH) * 0.2);
+  const shadowCanvas = document.createElement('canvas');
+  shadowCanvas.width = dispW + pad * 2;
+  shadowCanvas.height = dispH + pad * 2;
+  const shadowCtx = shadowCanvas.getContext('2d');
+
+  // Lighting contrast determines shadow strength
+  const lightingContrast = bg.stdL / 128; // 0.2–1.5 typical
+  const baseShadowStrength = Math.max(0.3, Math.min(1.0, lightingContrast));
+  const shadowStrMult = stylePreset ? stylePreset.shadowStr : 1.0;
+  const distMult = stylePreset ? stylePreset.shadowDist : 1.0;
+  const blurMult = stylePreset ? stylePreset.shadowBlur : 1.0;
+  const shadowStrength = baseShadowStrength * shadowStrMult;
+
+  // Shadow distance: 8–15% of sticker size, scaled by contrast + style
+  const shadowDist = Math.max(8, Math.round(Math.min(dispW, dispH) * (0.08 + baseShadowStrength * 0.07) * distMult));
+  const shadowBlur = Math.round(Math.max(4, shadowDist * (0.6 + (1 - baseShadowStrength) * 0.6) * blurMult));
+
+  // Shadow direction: use LOCAL gradient around sticker (bg.gradH, bg.gradV)
+  // gradH > 0 = brighter on right → shadow goes LEFT  (-gradH)
+  // gradV > 0 = brighter on bottom → shadow goes UP    (-gradV)
+  // Falls back to global lightAngle+180 if local gradient is too flat
+  let shadowAngleRad;
+  if (Math.abs(bg.gradH) > 0.3 || Math.abs(bg.gradV) > 0.3) {
+    // atan2(y, x): y=-gradV (shadow goes up when brighter below), x=-gradH (shadow goes left when brighter right)
+    const localAngle = Math.atan2(-bg.gradV, -bg.gradH);
+    shadowAngleRad = localAngle;
+    console.log('📍 使用局部阴影方向:', (localAngle * 180 / Math.PI).toFixed(0) + '°');
+  } else {
+    // Flat lighting: use global light angle + 180 (away from light)
+    shadowAngleRad = (lightAngle + 180) * Math.PI / 180;
+    console.log('🌍 使用全局阴影方向:', lightAngle.toFixed(0) + '° → 阴影 ' + ((lightAngle + 180) % 360).toFixed(0) + '°');
+  }
+
+  const shadowOffX = Math.cos(shadowAngleRad) * shadowDist;
+  const shadowOffY = -Math.sin(shadowAngleRad) * shadowDist;
+
+  console.log('🔦 阴影参数:', {
+    阴影方向: (shadowAngleRad * 180 / Math.PI).toFixed(0) + '°',
+    偏移: shadowOffX.toFixed(0) + ', ' + shadowOffY.toFixed(0),
+    阴影距离: shadowDist + 'px',
+    阴影模糊: shadowBlur + 'px',
+    强度: shadowStrength.toFixed(2),
+    背景对比度: bg.stdL.toFixed(1),
+  });
+
+  // Draw silhouette centered
+  shadowCtx.save();
+  shadowCtx.translate(pad, pad);
+  shadowCtx.drawImage(offCanvas, 0, 0, dispW, dispH);
+  shadowCtx.restore();
+  shadowCtx.globalCompositeOperation = 'source-in';
+  shadowCtx.fillStyle = 'rgba(0,0,0,1)';
+  shadowCtx.fillRect(0, 0, shadowCanvas.width, shadowCanvas.height);
+  shadowCtx.globalCompositeOperation = 'source-over';
+  blurCanvas(shadowCanvas, shadowBlur);
+
+  sticker.shadowCanvas = shadowCanvas;
+  sticker.shadowEnabled = true;
+  sticker.shadowOffsetX = shadowOffX;
+  sticker.shadowOffsetY = shadowOffY;
+  sticker.shadowOpacity = 0.15 + shadowStrength * 0.15; // 0.30 to 0.45 based on contrast
+
+  console.log('✅ 融合完成！羽化:', featherPx+'px', '阴影偏移:', shadowDist+'px');
+}
+
+function blurCanvas(canvas, radius) {
+  // Simple box blur approximation (3-pass)
+  const ctx = canvas.getContext('2d');
+  if (radius <= 0) return;
+
+  // Use CSS filter blur on a temp canvas
+  const tempCanvas = document.createElement('canvas');
+  tempCanvas.width = canvas.width;
+  tempCanvas.height = canvas.height;
+  const tempCtx = tempCanvas.getContext('2d');
+  tempCtx.filter = `blur(${radius}px)`;
+  tempCtx.drawImage(canvas, 0, 0);
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(tempCanvas, 0, 0);
+}
+
+// ==================== STYLE-AWARE EFFECTS ====================
+// Color posterization — quantize RGB channels to N levels (cel-shading effect)
+function posterizeColors(imageData, levels) {
+  const data = imageData.data;
+  const step = 256 / levels;
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] < 10) continue;
+    data[i]     = Math.round(data[i] / step) * step;
+    data[i + 1] = Math.round(data[i + 1] / step) * step;
+    data[i + 2] = Math.round(data[i + 2] / step) * step;
+  }
+}
+
+// Desaturate — lerp each channel toward grayscale by amount (0=none, 1=full)
+function desaturateImage(imageData, amount) {
+  const data = imageData.data;
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] < 10) continue;
+    const r = data[i], g = data[i + 1], b = data[i + 2];
+    const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+    data[i]     = r + (gray - r) * amount;
+    data[i + 1] = g + (gray - g) * amount;
+    data[i + 2] = b + (gray - b) * amount;
+  }
+}
+
+// Style presets — each style defines feather, shadow, exposure, and optional post-processing
+function getStylePreset(styleKey) {
+  const presets = {
+    photo:  { label: '写实照片',   feather: 10, exposure: 25, shadowBlur: 1.0, shadowStr: 1.0, shadowDist: 1.0, posterize: false, posterLv: 0, desaturate: false, desatAmt: 0 },
+    anime:  { label: '二次元/动漫', feather: 1,  exposure: 5,  shadowBlur: 0.35, shadowStr: 1.3, shadowDist: 1.1, posterize: true,  posterLv: 6, desaturate: false, desatAmt: 0 },
+    sketch: { label: '黑白线稿',   feather: 2,  exposure: 30, shadowBlur: 0.5,  shadowStr: 0.5, shadowDist: 0.8, posterize: false, posterLv: 0, desaturate: true,  desatAmt: 0.45 },
+    '3d':   { label: '3D渲染',     feather: 8,  exposure: 20, shadowBlur: 1.8,  shadowStr: 0.6, shadowDist: 0.9, posterize: false, posterLv: 0, desaturate: false, desatAmt: 0 },
+  };
+  return presets[styleKey] || presets.photo;
+}
+
+// ==================== STYLE DETECTION ====================
+let detectedStyle = null;     // { style, confidence, metrics }
+let userStyleOverride = null; // null=auto, or 'photo'|'anime'|'sketch'|'3d'
+
+function detectImageStyle(img) {
+  // Downsample to max 400px for speed
+  const maxDim = 400;
+  let sw = img.naturalWidth, sh = img.naturalHeight;
+  const scale = Math.min(1, maxDim / Math.max(sw, sh));
+  sw = Math.round(sw * scale);
+  sh = Math.round(sh * scale);
+
+  const c = document.createElement('canvas');
+  c.width = sw; c.height = sh;
+  const cx = c.getContext('2d');
+  cx.drawImage(img, 0, 0, sw, sh);
+  const imageData = cx.getImageData(0, 0, sw, sh);
+  const data = imageData.data;
+
+  // Per-pixel analysis with step=2
+  let sumSat = 0, sumR = 0, sumG = 0, sumB = 0;
+  let sumR2 = 0, sumG2 = 0, sumB2 = 0, sumRG = 0, sumRB = 0, sumGB = 0;
+  let sampleCount = 0;
+
+  // Gradient histogram for edge/bimodality analysis
+  const gradBins = new Uint32Array(32);
+
+  // Color quantization set for palette complexity
+  const colorSet = new Set();
+
+  // First pass: basic stats + color complexity
+  for (let y = 0; y < sh; y += 2) {
+    for (let x = 0; x < sw; x += 2) {
+      const i = (y * sw + x) * 4;
+      const r = data[i], g = data[i + 1], b = data[i + 2];
+      const sat = Math.max(r, g, b) - Math.min(r, g, b);
+
+      sumSat += sat;
+      sumR += r; sumG += g; sumB += b;
+      sumR2 += r * r; sumG2 += g * g; sumB2 += b * b;
+      sumRG += r * g; sumRB += r * b; sumGB += g * b;
+
+      // Color complexity: quantize each channel to 8 levels (3 bits)
+      const r8 = r >> 5, g8 = g >> 5, b8 = b >> 5;
+      colorSet.add((r8 << 6) | (g8 << 3) | b8);
+
+      sampleCount++;
+    }
+  }
+
+  if (sampleCount < 100) return { style: 'photo', confidence: 0.5, metrics: {} };
+
+  const meanSat = sumSat / sampleCount;
+
+  // Grayscale correlation (Pearson)
+  const meanR = sumR / sampleCount, meanG = sumG / sampleCount, meanB = sumB / sampleCount;
+  const varR = sumR2 / sampleCount - meanR * meanR;
+  const varG = sumG2 / sampleCount - meanG * meanG;
+  const varB = sumB2 / sampleCount - meanB * meanB;
+  const covRG = sumRG / sampleCount - meanR * meanG;
+  const covRB = sumRB / sampleCount - meanR * meanB;
+  const covGB = sumGB / sampleCount - meanG * meanB;
+  const corrRG = varR > 0 && varG > 0 ? covRG / Math.sqrt(varR * varG) : 0;
+  const corrRB = varR > 0 && varB > 0 ? covRB / Math.sqrt(varR * varB) : 0;
+  const corrGB = varG > 0 && varB > 0 ? covGB / Math.sqrt(varG * varB) : 0;
+  const grayCorr = (corrRG + corrRB + corrGB) / 3;
+
+  // Color complexity
+  const colorComplexity = colorSet.size / sampleCount;
+
+  // Second pass: gradient magnitudes for edge density + bimodality
+  for (let y = 2; y < sh - 2; y += 2) {
+    for (let x = 2; x < sw - 2; x += 2) {
+      const i = (y * sw + x) * 4;
+      const iL = ((y) * sw + (x - 2)) * 4;
+      const iR = ((y) * sw + (x + 2)) * 4;
+      const iU = ((y - 2) * sw + (x)) * 4;
+      const iD = ((y + 2) * sw + (x)) * 4;
+      const lC = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+      const lL = 0.299 * data[iL] + 0.587 * data[iL + 1] + 0.114 * data[iL + 2];
+      const lR = 0.299 * data[iR] + 0.587 * data[iR + 1] + 0.114 * data[iR + 2];
+      const lU = 0.299 * data[iU] + 0.587 * data[iU + 1] + 0.114 * data[iU + 2];
+      const lD = 0.299 * data[iD] + 0.587 * data[iD + 1] + 0.114 * data[iD + 2];
+      const gx = lR - lL;
+      const gy = lD - lU;
+      const mag = Math.sqrt(gx * gx + gy * gy);
+      const binIdx = Math.min(31, Math.floor(mag / 8));
+      gradBins[binIdx]++;
+    }
+  }
+
+  // Edge density: proportion of pixels with significant gradient
+  let totalGrad = 0, edgePixels = 0, flatPixels = 0, sharpPixels = 0;
+  for (let i = 0; i < 32; i++) totalGrad += gradBins[i];
+  if (totalGrad > 0) {
+    for (let i = 0; i < 2; i++) flatPixels += gradBins[i];    // bins 0-1: gradient < 16
+    for (let i = 10; i < 32; i++) sharpPixels += gradBins[i]; // bins 10-31: gradient > 80
+  }
+  const edgeDensity = totalGrad > 0 ? (totalGrad - gradBins[0] - gradBins[1]) / totalGrad : 0;
+  const bimodalityScore = flatPixels > 0 ? sharpPixels / flatPixels : 0;
+
+  // === Classification ===
+  let style, confidence;
+
+  if (meanSat < 12 && grayCorr > 0.92) {
+    style = 'sketch';
+    confidence = 0.80 + Math.min(0.15, (grayCorr - 0.92) * 2);
+  } else if (colorComplexity < 0.06 && bimodalityScore > 2.0 && edgeDensity > 0.10) {
+    style = 'anime';
+    confidence = 0.75 + Math.min(0.20, bimodalityScore * 0.05);
+  } else if (colorComplexity > 0.10 && edgeDensity > 0.08) {
+    style = 'photo';
+    confidence = 0.70 + Math.min(0.20, (colorComplexity - 0.10) * 3);
+  } else if (colorComplexity < 0.04 && edgeDensity < 0.06) {
+    style = '3d';
+    confidence = 0.55;
+  } else {
+    style = 'photo';
+    confidence = 0.50;
+  }
+
+  const metrics = { meanSat, grayCorr, colorComplexity, edgeDensity, bimodalityScore, sampleCount };
+  console.log('🔬 风格检测:', getStylePreset(style).label, Math.round(confidence * 100) + '%', metrics);
+
+  return { style, confidence: Math.min(0.95, confidence), metrics };
+}
+
+function updateStyleIndicator() {
+  const indicator = document.getElementById('styleIndicator');
+  if (!indicator) return;
+  const effective = userStyleOverride || (detectedStyle ? detectedStyle.style : null);
+  if (!effective) {
+    indicator.style.display = 'none';
+    return;
+  }
+  const preset = getStylePreset(effective);
+  const confText = (!userStyleOverride && detectedStyle)
+    ? ' (' + Math.round(detectedStyle.confidence * 100) + '%)'
+    : '';
+  indicator.style.display = '';
+  indicator.textContent = '🎯 ' + preset.label + confText;
+}
+
+function resetStickerAdjustments() {
+  if (!selectedId) return;
+  saveUndo();
+  const sticker = stickers.find(s => s.id === selectedId);
+  if (!sticker) return;
+  sticker.adjustedImage = null;
+  sticker.adjustments = null;
+  sticker.shadowEnabled = false;
+  sticker.shadowCanvas = null;
+  render();
+  showToast('↩ 融合效果已撤销');
+}
+
+// ==================== EXPORT ====================
+function downloadResult() {
+  if (!bgImage && stickers.length === 0) {
+    showToast('⚠️ 画布为空，请先添加内容');
+    return;
+  }
+
+  const format = document.getElementById('exportFormat').value;
+  const quality = parseInt(document.getElementById('exportQuality').value) / 100;
+  let mimeType, ext;
+  if (format === 'jpeg') { mimeType = 'image/jpeg'; ext = 'jpg'; }
+  else if (format === 'webp') { mimeType = 'image/webp'; ext = 'webp'; }
+  else { mimeType = 'image/png'; ext = 'png'; }
+
+  const exportCanvas = document.createElement('canvas');
+  exportCanvas.width = canvas.width;
+  exportCanvas.height = canvas.height;
+  const exportCtx = exportCanvas.getContext('2d');
+
+  // JPEG/WebP need opaque background; fill white first if no bgImage
+  const needsOpaqueBg = (format === 'jpeg') && !bgImage;
+  if (needsOpaqueBg) {
+    exportCtx.fillStyle = '#ffffff';
+    exportCtx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+
+  // Draw background
+  if (bgImage) {
+    exportCtx.drawImage(bgImage, 0, 0, canvas.width, canvas.height);
+  } else if (format === 'png') {
+    exportCtx.fillStyle = '#ffffff';
+    exportCtx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+
+  // Draw stickers (back to front)
+  for (const sticker of stickers) {
+    exportCtx.save();
+    exportCtx.translate(sticker.x, sticker.y);
+    const img = sticker.adjustedImage || sticker.image;
+    const w = sticker.width, h = sticker.height;
+    const sx = sticker.flipH ? -1 : 1;
+    const sy = sticker.flipV ? -1 : 1;
+
+    if (sticker.shadowEnabled && sticker.shadowCanvas) {
+      exportCtx.save();
+      exportCtx.globalAlpha = (sticker.shadowOpacity || 0.3) * sticker.opacity * 0.8;
+      exportCtx.translate(sticker.shadowOffsetX || 0, sticker.shadowOffsetY || 0);
+      exportCtx.rotate(sticker.rotation * Math.PI / 180);
+      exportCtx.scale(sx, sy);
+      const sCanvas = sticker.shadowCanvas;
+      exportCtx.drawImage(sCanvas, -sCanvas.width/2, -sCanvas.height/2, sCanvas.width, sCanvas.height);
+      exportCtx.restore();
+    }
+
+    exportCtx.rotate(sticker.rotation * Math.PI / 180);
+    exportCtx.scale(sx, sy);
+    exportCtx.globalAlpha = sticker.opacity;
+    exportCtx.drawImage(img, -w/2, -h/2, w, h);
+    exportCtx.restore();
+  }
+
+  // Download
+  exportCanvas.toBlob((blob) => {
+    if (!blob) { showToast('❌ 导出失败'); return; }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'composite_' + Date.now() + '.' + ext;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    const sizeKB = (blob.size / 1024).toFixed(0);
+    showToast('✅ ' + ext.toUpperCase() + ' ' + sizeKB + 'KB 已下载');
+  }, mimeType, quality);
+}
+
+function onExportFormatChange() {
+  const fmt = document.getElementById('exportFormat').value;
+  const wrap = document.getElementById('exportQualityWrap');
+  wrap.style.display = (fmt === 'jpeg' || fmt === 'webp') ? 'flex' : 'none';
+}
+
+// ==================== RESET ====================
+function resetAll() {
+  bgImage = null;
+  bgImageData = null;
+  stickers = [];
+  selectedId = null;
+  stickerIdCounter = 0;
+  interactionMode = null;
+  detectedStyle = null;
+  userStyleOverride = null;
+  initCanvas(800, 600);
+  document.getElementById('dropZone').style.display = '';
+  document.getElementById('bottomBar').style.display = '';
+  document.getElementById('noSelectionHint').style.display = '';
+  document.getElementById('stickerProps').style.display = 'none';
+  document.getElementById('btnBlend').disabled = true;
+  const styleSelect = document.getElementById('propStyle');
+  if (styleSelect) styleSelect.value = 'auto';
+  const indicator = document.getElementById('styleIndicator');
+  if (indicator) indicator.style.display = 'none';
+  render();
+  showToast('🔄 已重置');
+}
+
+// ==================== HELPERS ====================
+let toastTimer;
+function showToast(msg) {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove('show'), 2000);
+}
+
+// ==================== UNDO / REDO ====================
+const MAX_UNDO = 40;
+let undoStack = [];
+let redoStack = [];
+
+function snapshotState() {
+  const bgSnap = bgImage ? { src: bgImage.src, w: canvas.width, h: canvas.height } : null;
+  const stickersSnap = stickers.map(s => ({
+    id: s.id, type: s.type, x: s.x, y: s.y,
+    width: s.width, height: s.height, rotation: s.rotation, opacity: s.opacity,
+    flipH: !!s.flipH, flipV: !!s.flipV,
+    imageSrc: s.image.src,
+    originalImageSrc: s.originalImage.src,
+    adjustedImageSrc: s.adjustedImage ? s.adjustedImage.src : null,
+    shadowEnabled: !!s.shadowEnabled,
+    shadowCanvasUrl: s.shadowCanvas ? s.shadowCanvas.toDataURL() : null,
+    shadowOffsetX: s.shadowOffsetX || 0,
+    shadowOffsetY: s.shadowOffsetY || 0,
+    shadowOpacity: s.shadowOpacity || 0.3,
+    adjustments: s.adjustments ? JSON.parse(JSON.stringify(s.adjustments)) : null,
+  }));
+  return { bgSnap, stickersSnap, selectedId, stickerIdCounter };
+}
+
+function saveUndo() {
+  redoStack = [];
+  undoStack.push(snapshotState());
+  if (undoStack.length > MAX_UNDO) undoStack.shift();
+  updateUndoButtons();
+}
+
+function undo() {
+  if (undoStack.length === 0) return;
+  redoStack.push(snapshotState());
+  restoreSnapshot(undoStack.pop());
+  updateUndoButtons();
+}
+
+function redo() {
+  if (redoStack.length === 0) return;
+  undoStack.push(snapshotState());
+  restoreSnapshot(redoStack.pop());
+  updateUndoButtons();
+}
+
+function restoreSnapshot(state) {
+  // Restore background
+  if (state.bgSnap) {
+    const img = new Image();
+    img.onload = () => {
+      bgImage = img;
+      initCanvas(state.bgSnap.w, state.bgSnap.h);
+      ctx.drawImage(img, 0, 0, state.bgSnap.w, state.bgSnap.h);
+      bgImageData = ctx.getImageData(0, 0, state.bgSnap.w, state.bgSnap.h);
+      hideDropZone();
+      document.getElementById('bottomBar').style.display = 'none';
+      document.getElementById('btnBlend').disabled = !selectedId;
+      restoreStickersAndFinish(state);
+    };
+    img.src = state.bgSnap.src;
+  } else {
+    bgImage = null; bgImageData = null;
+    initCanvas(800, 600);
+    document.getElementById('dropZone').style.display = '';
+    document.getElementById('bottomBar').style.display = '';
+    document.getElementById('btnBlend').disabled = true;
+    restoreStickersAndFinish(state);
+  }
+}
+
+function restoreStickersAndFinish(state) {
+  stickers = state.stickersSnap.map(snap => {
+    const img = new Image(); img.src = snap.imageSrc;
+    const origImg = new Image(); origImg.src = snap.originalImageSrc;
+    const s = {
+      id: snap.id, type: snap.type, image: img, originalImage: origImg,
+      x: snap.x, y: snap.y, width: snap.width, height: snap.height,
+      rotation: snap.rotation, opacity: snap.opacity,
+      flipH: snap.flipH, flipV: snap.flipV,
+      shadowEnabled: snap.shadowEnabled,
+      shadowCanvas: null,
+      shadowOffsetX: snap.shadowOffsetX,
+      shadowOffsetY: snap.shadowOffsetY,
+      shadowOpacity: snap.shadowOpacity,
+      adjustedImage: null,
+      adjustments: snap.adjustments,
+    };
+    if (snap.adjustedImageSrc) {
+      const adj = new Image(); adj.src = snap.adjustedImageSrc;
+      s.adjustedImage = adj;
+    }
+    if (snap.shadowCanvasUrl) {
+      const shImg = new Image();
+      shImg.onload = () => {
+        const sc = document.createElement('canvas');
+        sc.width = shImg.naturalWidth; sc.height = shImg.naturalHeight;
+        sc.getContext('2d').drawImage(shImg, 0, 0);
+        s.shadowCanvas = sc;
+        if (s.id === selectedId) render();
+      };
+      shImg.src = snap.shadowCanvasUrl;
+    }
+    return s;
+  });
+
+  selectedId = state.selectedId;
+  stickerIdCounter = state.stickerIdCounter;
+
+  // Update UI
+  if (selectedId) {
+    const st = stickers.find(s => s.id === selectedId);
+    document.getElementById('noSelectionHint').style.display = 'none';
+    document.getElementById('stickerProps').style.display = '';
+    document.getElementById('btnBlend').disabled = !bgImage;
+    if (st) {
+      const origW = st.originalImage.naturalWidth || 1;
+      document.getElementById('propScale').value = Math.round(st.width / origW * 100);
+      document.getElementById('propScaleVal').textContent = Math.round(st.width / origW * 100) + '%';
+      document.getElementById('propRotate').value = Math.round(st.rotation);
+      document.getElementById('propRotateVal').textContent = Math.round(st.rotation) + '°';
+      document.getElementById('propOpacity').value = Math.round(st.opacity * 100);
+      document.getElementById('propOpacityVal').textContent = Math.round(st.opacity * 100) + '%';
+      updateFlipButtons(st);
+    }
+  } else {
+    document.getElementById('noSelectionHint').style.display = '';
+    document.getElementById('stickerProps').style.display = 'none';
+    if (!bgImage) document.getElementById('bottomBar').style.display = '';
+  }
+  render();
+}
+
+function updateUndoButtons() {
+  const bu = document.getElementById('btnUndo');
+  const br = document.getElementById('btnRedo');
+  if (bu) bu.disabled = undoStack.length === 0;
+  if (br) br.disabled = redoStack.length === 0;
+}
+
+// ==================== KEYBOARD SHORTCUTS ====================
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+    if (selectedId && document.activeElement === document.body) {
+      deleteSelectedSticker();
+    }
+  }
+  if (e.key === 'Escape') {
+    deselectAll();
+  }
+  if (e.ctrlKey && e.key === 'z' && !e.shiftKey) {
+    e.preventDefault();
+    undo();
+  }
+  if ((e.ctrlKey && e.key === 'Z' && e.shiftKey) || (e.ctrlKey && e.key === 'y')) {
+    e.preventDefault();
+    redo();
+  }
+});
+
+// ==================== INIT ====================
+initCanvas(800, 600);
+loadCustomStickers().then(() => {
+  renderCustomStickerGrid();
+});
+render();
+</script>
+</body>
+</html>
