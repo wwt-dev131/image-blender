@@ -2288,9 +2288,13 @@ document.addEventListener('keydown', (e) => {
 });
 
 // ==================== INIT ====================
+function fitCanvasToContainer() {
+  if (!bgImage) { initCanvas(); render(); }
+}
 initCanvas();
 loadCustomStickers().then(() => {
   renderCustomStickerGrid();
+  requestAnimationFrame(fitCanvasToContainer);
 });
 render();
 </script>
