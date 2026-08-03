@@ -2294,9 +2294,15 @@ function fitCanvasToContainer() {
 initCanvas();
 loadCustomStickers().then(() => {
   renderCustomStickerGrid();
-  requestAnimationFrame(fitCanvasToContainer);
 });
 render();
+// Re-fit the default canvas whenever the canvas area size changes
+// (panels loading, device rotation, browser toolbar show/hide, window resize).
+if ('ResizeObserver' in window) {
+  new ResizeObserver(fitCanvasToContainer).observe(document.getElementById('canvasContainer'));
+} else {
+  window.addEventListener('resize', fitCanvasToContainer);
+}
 </script>
 </body>
 </html>
