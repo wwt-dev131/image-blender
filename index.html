@@ -2310,30 +2310,46 @@ if ('ResizeObserver' in window) {
 // horizontal drag gesture: value changes relative to its current value.
 // Mouse/desktop behaviour is unchanged (only touch events are intercepted).
 function setupDragOnlySliders() {
+  // Only needed on touch-primary devices. Desktop mouse keeps native behaviour.
+  if (!window.matchMedia || !window.matchMedia('(pointer: coarse)').matches) return;
   document.querySelectorAll('input[type="range"]').forEach(function(slider) {
+    slider.style.touchAction = 'none'; // block native touch handling (incl. tap-to-jump)
     const min = parseFloat(slider.min), max = parseFloat(slider.max);
     const range = max - min;
     let drag = null;
-    slider.addEventListener('touchstart', function(e) {
-      if (e.touches.length !== 1) return;
-      drag = { x: e.touches[0].clientX, y: e.touches[0].clientY, v: parseFloat(slider.value) };
-      e.preventDefault(); // stop the browser from jumping to the touched position
-    }, { passive: false });
-    slider.addEventListener('touchmove', function(e) {
-      if (!drag || e.touches.length !== 1) return;
-      const t = e.touches[0];
-      const dx = t.clientX - drag.x;
-      const dy = t.clientY - drag.y;
-      // only treat clearly-horizontal movement as a slider drag
+    slider.addEventListener('pointerdown', function(e) {
+      drag = { x: e.clientX, y: e.clientY, v: parseFloat(slider.value) };
+      try { slider.setPointerCapture(e.pointerId); } catch (err) {}
+      e.preventDefault(); // cancel the native tap-to-jump
+    });
+    slider.addEventListener('pointermove', function(e) {
+      if (!drag) return;
+      const dx = e.clientX - drag.x;
+      const dy = e.clientY - drag.y;
       if (Math.abs(dx) > 6 && Math.abs(dx) > Math.abs(dy)) {
         const width = slider.getBoundingClientRect().width || 100;
         slider.value = Math.round(Math.min(max, Math.max(min, drag.v + (dx / width) * range)));
         slider.dispatchEvent(new Event('input', { bubbles: true }));
-        e.preventDefault();
       }
-    }, { passive: false });
-    slider.addEventListener('touchend', function() { drag = null; });
-    slider.addEventListener('touchcancel', function() { drag = null; });
+    });
+    slider.addEventListener('pointerup', function(e) {
+      if (drag) {
+        const dx = e.clientX - drag.x;
+        if (Math.abs(dx) < 6) {
+          // A tap (no real drag): restore the original value as a safety net.
+          slider.value = drag.v;
+          slider.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      }
+      drag = null;
+    });
+    slider.addEventListener('pointercancel', function() {
+      if (drag) {
+        slider.value = drag.v;
+        slider.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      drag = null;
+    });
   });
 }
 setupDragOnlySliders();
