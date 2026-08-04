@@ -419,6 +419,23 @@ canvas {
           <input type="range" id="propFeather" min="0" max="30" value="10">
           <span class="prop-value" id="propFeatherVal">10</span>
         </div>
+        <div class="prop-row">
+          <span class="prop-label">去白边</span>
+          <input type="range" id="propDefringe" min="0" max="100" value="0" oninput="document.getElementById('propDefringeVal').textContent=this.value">
+          <span class="prop-value" id="propDefringeVal">0</span>
+        </div>
+        <div class="prop-row">
+          <span class="prop-label">混合模式</span>
+          <select id="propBlend" onchange="onBlendModeChange()" style="flex:1;background:#ffffff;color:#1f2937;border:1px solid #e2e8f0;border-radius:5px;padding:5px 8px;font-size:11px;cursor:pointer;outline:none;">
+            <option value="source-over">正常</option>
+            <option value="multiply">正片叠底</option>
+            <option value="screen">滤色</option>
+            <option value="overlay">叠加</option>
+            <option value="soft-light">柔光</option>
+            <option value="darken">变暗</option>
+            <option value="lighten">变亮</option>
+          </select>
+        </div>
         <div class="prop-row" style="margin-top:4px;">
           <span class="prop-label">风格</span>
           <select id="propStyle" onchange="onStyleChange()" style="flex:1;background:#ffffff;color:#1f2937;border:1px solid #e2e8f0;border-radius:5px;padding:5px 8px;font-size:11px;cursor:pointer;outline:none;">
@@ -803,7 +820,9 @@ function drawSticker(sticker) {
   ctx.rotate(sticker.rotation * Math.PI / 180);
   ctx.scale(sx, sy);
   ctx.globalAlpha = sticker.opacity;
+  ctx.globalCompositeOperation = sticker.blendMode || 'source-over';
   ctx.drawImage(img, -w/2, -h/2, w, h);
+  ctx.globalCompositeOperation = 'source-over'; // 选中框/网格不受混合模式影响
 
   // Selection indicator
   if (!cutState.active && sticker.id === selectedId) {
@@ -903,6 +922,7 @@ async function addImageSticker(img) {
     opacity: 1,
     flipH: false,
     flipV: false,
+    blendMode: 'source-over',
     shadowEnabled: false,
     shadowCanvas: null,
     shadowOffsetX: 0,
@@ -934,6 +954,8 @@ function selectSticker(id) {
   document.getElementById('propRotateVal').textContent = Math.round(sticker.rotation) + '°';
   document.getElementById('propOpacity').value = Math.round(sticker.opacity * 100);
   document.getElementById('propOpacityVal').textContent = Math.round(sticker.opacity * 100) + '%';
+  const blendSel = document.getElementById('propBlend');
+  if (blendSel) blendSel.value = sticker.blendMode || 'source-over';
 
   updateFlipButtons(sticker);
 
@@ -1130,6 +1152,14 @@ function onStyleChange() {
   document.getElementById('propFeatherVal').textContent = preset.feather;
   document.getElementById('propBlendStrength').value = preset.exposure;
   updateStyleIndicator();
+}
+
+function onBlendModeChange() {
+  if (!selectedId) return;
+  const sticker = stickers.find(s => s.id === selectedId);
+  if (!sticker) return;
+  sticker.blendMode = document.getElementById('propBlend').value || 'source-over';
+  render();
 }
 
 // ==================== CANVAS INTERACTION ====================
@@ -1578,6 +1608,7 @@ function autoBlend() {
 
   const blendStrength = parseInt(document.getElementById('propBlendStrength').value) / 100;
   const featherAmount = parseInt(document.getElementById('propFeather').value);
+  const defringeAmount = parseInt(document.getElementById('propDefringe').value) || 0;
   const manualLightAngle = parseInt(document.getElementById('propLightAngle').value);
 
   // Quick analysis of background and sticker (lightweight)
@@ -1593,6 +1624,7 @@ function autoBlend() {
   applyAutoBlend(sticker, bg, st, {
     blendStrength,
     featherAmount,
+    defringeAmount,
     lightAngle: manualLightAngle,
     stylePreset,
   });
@@ -1600,6 +1632,7 @@ function autoBlend() {
   sticker.adjustments = {
     blendStrength,
     featherAmount,
+    defringeAmount,
     lightAngle: manualLightAngle,
     style: styleKey,
     bgLuminance: bg.meanL,
@@ -1869,7 +1902,7 @@ function computeEdgeDistance(data, w, h) {
 }
 
 function applyAutoBlend(sticker, bg, st, params) {
-  const { blendStrength, featherAmount, lightAngle, stylePreset } = params;
+  const { blendStrength, featherAmount, defringeAmount, lightAngle, stylePreset } = params;
 
   // Get sticker pixel data at natural resolution
   const img = sticker.originalImage;
@@ -1888,6 +1921,8 @@ function applyAutoBlend(sticker, bg, st, params) {
 
   // Feather: 2–15 px range, controlled by featherAmount (0-30 → 2-15px)
   const featherPx = 2 + Math.round(featherAmount * 13 / 30);
+  // Defringe: mask contraction 0–5px to strip the old-background halo (white fringe)
+  const defringePx = Math.round((defringeAmount || 0) / 100 * 5);
 
   // === Subtle exposure compensation ===
   // Only shift brightness slightly (max ~20% of the difference) so the sticker
@@ -1940,6 +1975,17 @@ function applyAutoBlend(sticker, bg, st, params) {
         const t = dist / featherPx;
         const smooth = t * t * (3 - 2 * t); // smoothstep
         data[i + 3] = Math.round(a * smooth);
+      }
+    }
+
+    // Defringe: contract the mask to strip the old-background halo (white fringe).
+    // Runs AFTER feather so both alpha fades compose (multiply).
+    if (defringePx > 0) {
+      const d = edgeDist[i / 4];
+      if (d < defringePx) {
+        const t = d / defringePx;
+        const smooth = t * t * (3 - 2 * t); // smoothstep
+        data[i + 3] = Math.round(data[i + 3] * smooth);
       }
     }
   }
@@ -2238,6 +2284,9 @@ function resetStickerAdjustments() {
   sticker.adjustments = null;
   sticker.shadowEnabled = false;
   sticker.shadowCanvas = null;
+  sticker.blendMode = 'source-over';
+  const blendSel = document.getElementById('propBlend');
+  if (blendSel) blendSel.value = 'source-over';
   render();
   showToast('↩ 融合效果已撤销');
 }
@@ -3276,7 +3325,9 @@ function downloadResult() {
     exportCtx.rotate(sticker.rotation * Math.PI / 180);
     exportCtx.scale(sx, sy);
     exportCtx.globalAlpha = sticker.opacity;
+    exportCtx.globalCompositeOperation = sticker.blendMode || 'source-over';
     exportCtx.drawImage(img, -w/2, -h/2, w, h);
+    exportCtx.globalCompositeOperation = 'source-over'; // restore 前复位
     exportCtx.restore();
   }
 
