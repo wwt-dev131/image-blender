@@ -2303,6 +2303,40 @@ if ('ResizeObserver' in window) {
 } else {
   window.addEventListener('resize', fitCanvasToContainer);
 }
+
+// ==================== MOBILE SLIDER FIX ====================
+// On touch devices, tapping a range slider jumps it to the touched spot,
+// causing accidental changes (e.g. scale 10% -> 200%). Instead, require a
+// horizontal drag gesture: value changes relative to its current value.
+// Mouse/desktop behaviour is unchanged (only touch events are intercepted).
+function setupDragOnlySliders() {
+  document.querySelectorAll('input[type="range"]').forEach(function(slider) {
+    const min = parseFloat(slider.min), max = parseFloat(slider.max);
+    const range = max - min;
+    let drag = null;
+    slider.addEventListener('touchstart', function(e) {
+      if (e.touches.length !== 1) return;
+      drag = { x: e.touches[0].clientX, y: e.touches[0].clientY, v: parseFloat(slider.value) };
+      e.preventDefault(); // stop the browser from jumping to the touched position
+    }, { passive: false });
+    slider.addEventListener('touchmove', function(e) {
+      if (!drag || e.touches.length !== 1) return;
+      const t = e.touches[0];
+      const dx = t.clientX - drag.x;
+      const dy = t.clientY - drag.y;
+      // only treat clearly-horizontal movement as a slider drag
+      if (Math.abs(dx) > 6 && Math.abs(dx) > Math.abs(dy)) {
+        const width = slider.getBoundingClientRect().width || 100;
+        slider.value = Math.round(Math.min(max, Math.max(min, drag.v + (dx / width) * range)));
+        slider.dispatchEvent(new Event('input', { bubbles: true }));
+        e.preventDefault();
+      }
+    }, { passive: false });
+    slider.addEventListener('touchend', function() { drag = null; });
+    slider.addEventListener('touchcancel', function() { drag = null; });
+  });
+}
+setupDragOnlySliders();
 </script>
 </body>
 </html>
