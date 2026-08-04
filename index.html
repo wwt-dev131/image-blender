@@ -209,6 +209,10 @@ canvas {
 .bgrm-mode-row { display: flex; gap: 8px; margin-bottom: 10px; }
 .bgrm-mode-row button { flex: 1; min-height: 40px; }
 .bgrm-mode-row button.active { background: #14b8a6; color: #fff; border-color: #14b8a6; }
+.ai-progress { margin-bottom: 8px; }
+.ai-progress-bar { height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden; }
+.ai-progress-fill { height: 100%; width: 0; background: #14b8a6; transition: width 0.2s; }
+.ai-progress #aiProgressText { font-size: 11px; color: #64748b; }
 .bgrm-hint {
   position: absolute; bottom: 6px; left: 0; right: 0; text-align: center;
   font-size: 11px; color: #475569; background: rgba(255,255,255,0.85); padding: 3px;
@@ -424,7 +428,11 @@ canvas {
 <div class="modal-mask" id="bgrmModal" style="display:none;">
   <div class="modal-box">
     <div class="modal-title">✨ 去背景</div>
-    <button class="btn-primary" id="btnAiCut" style="width:100%;min-height:44px;margin-bottom:10px;font-size:14px;" onclick="aiCutout()">🤖 AI 智能抠图（一键）</button>
+    <button class="btn-primary" id="btnAiCut" style="width:100%;min-height:44px;margin-bottom:6px;font-size:14px;" onclick="aiCutout()">🤖 AI 智能抠图（一键）</button>
+    <div class="ai-progress" id="aiProgress" style="display:none;">
+      <div class="ai-progress-bar"><div class="ai-progress-fill" id="aiProgressFill"></div></div>
+      <span id="aiProgressText">下载中…</span>
+    </div>
     <div class="bgrm-mode-row">
       <button class="btn-outline" id="btnBgrmLine" onclick="setBgrmMode('loop')">✏️ 画圈吸附</button>
       <button class="btn-outline" id="btnBgrmColor" onclick="setBgrmMode('color')">🎨 颜色</button>
@@ -3065,10 +3073,45 @@ function onBgrmTolChange() {
 // fills the removal mask from the model's foreground probability map. Works well
 // on soft/fading edges that manual tools struggle with.
 let aiSession = null;
+let aiEngineLoaded = false;
 const AI_ORT_URL = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.23.0/dist/ort.min.js';
-const AI_MODEL_URL = 'u2netp.onnx'; // same origin on GitHub Pages
+const AI_MODEL_URL = 'u2netp.onnx';
+const AI_WASM_URL = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.23.0/dist/ort-wasm-simd-threaded.wasm';
+const AI_JSEP_MJS = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.23.0/dist/ort-wasm-simd-threaded.jsep.mjs';
+const AI_JSEP_WASM = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.23.0/dist/ort-wasm-simd-threaded.jsep.wasm';
 const U2NET_MEAN = [0.485, 0.456, 0.406];
 const U2NET_STD = [0.229, 0.224, 0.225];
+
+function showAiProgress(show, text) {
+  const p = document.getElementById('aiProgress');
+  if (!p) return;
+  p.style.display = show ? 'block' : 'none';
+  if (text) document.getElementById('aiProgressText').textContent = text;
+  if (!show) document.getElementById('aiProgressFill').style.width = '0%';
+}
+
+function updateAiProgress(pct) {
+  document.getElementById('aiProgressFill').style.width = Math.round(pct * 100) + '%';
+  document.getElementById('aiProgressText').textContent = '下载中 ' + Math.round(pct * 100) + '%';
+}
+
+async function fetchWithProgress(url, onProgress) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('下载失败(' + res.status + ')');
+  const total = +res.headers.get('content-length') || 0;
+  const reader = res.body.getReader();
+  const chunks = [];
+  let loaded = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    loaded += value.length;
+    if (onProgress && total) onProgress(loaded / total);
+  }
+  const blob = new Blob(chunks);
+  return new Uint8Array(await blob.arrayBuffer());
+}
 
 function loadOrt() {
   return new Promise((resolve, reject) => {
@@ -3121,12 +3164,24 @@ async function aiCutout() {
   const st = bgrmState;
   if (!st) return;
   const hint = document.getElementById('bgrmHint');
-  hint.textContent = aiSession ? '🤖 AI 抠图中…' : '🤖 AI 抠图中…（首次需下载约15MB，请稍等）';
+  hint.textContent = aiSession ? '🤖 AI 抠图中…' : '🤖 AI 抠图中…（首次需下载约12MB，请稍等）';
   try {
     const ort = await loadOrt();
     if (!aiSession) {
+      if (!aiEngineLoaded) {
+        // pre-download engine files (shows progress, warms browser cache)
+        showAiProgress(true, '下载 AI 引擎（首次约40MB，请稍等）');
+        await fetchWithProgress(AI_WASM_URL, updateAiProgress);
+        await fetchWithProgress(AI_JSEP_WASM, updateAiProgress);
+        await fetch(AI_JSEP_MJS);
+        aiEngineLoaded = true;
+      }
+      showAiProgress(true, '下载 AI 模型…');
+      await fetchWithProgress(AI_MODEL_URL, updateAiProgress);
       aiSession = await ort.InferenceSession.create(AI_MODEL_URL, { executionProviders: ['wasm'] });
+      showAiProgress(false);
     }
+    hint.textContent = '🤖 AI 抠图中…';
     const out = await aiSession.run({ 'input.1': buildU2netInput(st.imgCanvas) });
     const mask = out['1959'] || out[Object.keys(out)[0]];
     const resized = resizeU2netMask(mask.data, 320, 320, st.w, st.h);
@@ -3140,6 +3195,7 @@ async function aiCutout() {
     hint.textContent = '🤖 已抠图，可调容差微调边缘，或应用/存库';
   } catch (e) {
     console.error(e);
+    showAiProgress(false);
     hint.textContent = '🤖 AI 抠图失败：' + (e.message || e);
   }
 }
