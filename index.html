@@ -175,6 +175,18 @@ canvas {
 }
 .toast.show { opacity: 1; }
 
+/* ==================== Custom touch sliders ==================== */
+/* Industry-standard approach: draw our own track/thumb and take over all
+   touch handling, so the native range input can never jump on tap.
+   touch-action: pan-y keeps vertical scrolling working over the slider. */
+.cs { position: relative; display: block; touch-action: pan-y; min-height: 28px; }
+.cs input[type="range"] { opacity: 0; pointer-events: none; width: 100%; display: block; margin: 0; }
+.cs .cs-track,
+.cs .cs-fill { position: absolute; left: 6px; top: 50%; height: 4px; transform: translateY(-50%); border-radius: 2px; pointer-events: none; }
+.cs .cs-track { right: 6px; background: #34345a; }
+.cs .cs-fill { background: linear-gradient(90deg, #7c8cf8, #a78bfa); }
+.cs .cs-thumb { position: absolute; top: 50%; width: 20px; height: 20px; border-radius: 50%; background: #fff; border: 3px solid #7c8cf8; box-shadow: 0 1px 4px rgba(0,0,0,.4); transform: translate(-50%,-50%); pointer-events: none; }
+
 /* Responsive - tablet & phone */
 @media (max-width: 900px) {
   .header { flex-wrap: wrap; row-gap: 4px; padding: 6px 10px; }
@@ -2304,51 +2316,106 @@ if ('ResizeObserver' in window) {
   window.addEventListener('resize', fitCanvasToContainer);
 }
 
-// ==================== MOBILE SLIDER FIX ====================
-// On touch devices, only dragging the round thumb changes the value.
-// Touching anywhere else on the track does nothing. We tell the browser via
-// touch-action:pan-y not to handle horizontal gestures on the slider natively
-// (so no tap-to-jump), while vertical panning over it still scrolls the panel.
-// Desktop mouse unchanged.
-function setupThumbOnlySliders() {
+// ==================== MOBILE SLIDER FIX (custom slider) ====================
+// Replace native <input type=range> with our own track + thumb so the browser
+// can never jump the value on tap. Only pressing the round thumb and dragging
+// changes the value; touching the track does nothing. touch-action: pan-y
+// keeps vertical scrolling over the slider working. Desktop mouse unchanged.
+function syncCs(wrap) {
+  const input = wrap.querySelector('input');
+  if (!input) return;
+  const min = parseFloat(input.min), max = parseFloat(input.max);
+  const range = max - min;
+  const v = Math.min(max, Math.max(min, parseFloat(input.value)));
+  const pct = range > 0 ? (v - min) / range : 0;
+  const width = wrap.clientWidth || 100;
+  const x = 6 + (width - 12) * pct;
+  const thumb = wrap.querySelector('.cs-thumb');
+  const fill = wrap.querySelector('.cs-fill');
+  if (thumb) thumb.style.left = x + 'px';
+  if (fill) fill.style.width = Math.max(0, x - 6) + 'px';
+}
+
+function buildCustomSliders() {
   if (!window.matchMedia || !window.matchMedia('(pointer: coarse)').matches) return;
-  const sliders = document.querySelectorAll('input[type="range"]');
-  let active = null; // { slider, startX, startValue, width }
+  document.querySelectorAll('input[type="range"]').forEach(function(slider) {
+    if (slider.dataset.csBuilt) return;
+    slider.dataset.csBuilt = '1';
 
-  document.addEventListener('pointerup', function() { active = null; });
-  document.addEventListener('pointercancel', function() { active = null; });
+    const wrap = document.createElement('div');
+    wrap.className = 'cs';
+    // keep the input's sizing role inside its flex row
+    const cs = getComputedStyle(slider);
+    if (parseFloat(cs.flexGrow) > 0) wrap.style.flex = '1 1 0%';
+    if (slider.style.width) wrap.style.width = slider.style.width;
+    slider.parentNode.insertBefore(wrap, slider);
+    wrap.appendChild(slider);
 
-  sliders.forEach(function(slider) {
-    const logicalMin = parseFloat(slider.min);
-    const logicalMax = parseFloat(slider.max);
-    const range = logicalMax - logicalMin;
-    slider.style.touchAction = 'none'; // fully disable the browser's native jump
+    // keep the native input purely as the value store (still read by the app)
+    slider.style.opacity = '0';
+    slider.style.pointerEvents = 'none';
+    slider.style.width = '100%';
+    slider.style.margin = '0';
 
-    slider.addEventListener('pointerdown', function(e) {
-      e.preventDefault(); // cancel the native tap-to-jump BEFORE it can happen
-      const rect = slider.getBoundingClientRect();
-      const v = parseFloat(slider.value);
-      const thumbX = rect.left + (v - logicalMin) / range * rect.width;
-      if (Math.abs(e.clientX - thumbX) <= 28) {
-        // touch is on the round thumb: start a manual drag
-        active = { slider: slider, startX: e.clientX, startValue: v, width: rect.width };
-        try { slider.setPointerCapture(e.pointerId); } catch (err) {}
-      } else {
-        active = null; // touching the track: nothing happens at all
-      }
-    });
+    const track = document.createElement('div'); track.className = 'cs-track'; wrap.appendChild(track);
+    const fill = document.createElement('div'); fill.className = 'cs-fill'; wrap.appendChild(fill);
+    const thumb = document.createElement('div'); thumb.className = 'cs-thumb'; wrap.appendChild(thumb);
 
-    slider.addEventListener('pointermove', function(e) {
-      if (!active || active.slider !== slider) return;
-      const dx = e.clientX - active.startX;
-      const delta = (dx / active.width) * range;
-      const v = Math.round(Math.min(logicalMax, Math.max(logicalMin, active.startValue + delta)));
-      slider.value = v;
-      slider.dispatchEvent(new Event('input', { bubbles: true }));
-    });
+    syncCs(wrap);
+    attachCsDrag(wrap);
   });
 }
-setupThumbOnlySliders();
+
+let activeCs = null; // { wrap, startX, startValue, width, range, min, max }
+document.addEventListener('pointerup', function() { activeCs = null; });
+document.addEventListener('pointercancel', function() { activeCs = null; });
+
+function attachCsDrag(wrap) {
+  wrap.addEventListener('pointerdown', function(e) {
+    const input = wrap.querySelector('input');
+    const min = parseFloat(input.min), max = parseFloat(input.max);
+    const range = max - min;
+    const v = parseFloat(input.value);
+    const width = wrap.clientWidth || 100;
+    const thumbX = 6 + (v - min) / (range || 1) * (width - 12);
+    const rect = wrap.getBoundingClientRect();
+    if (Math.abs(e.clientX - (rect.left + thumbX)) <= 30) {
+      activeCs = { wrap: wrap, startX: e.clientX, startValue: v, width: width, range: range, min: min, max: max };
+      try { wrap.setPointerCapture(e.pointerId); } catch (err) {}
+    }
+    // else: touching the track does nothing
+  });
+
+  wrap.addEventListener('pointermove', function(e) {
+    if (!activeCs || activeCs.wrap !== wrap) return;
+    const dx = e.clientX - activeCs.startX;
+    const raw = activeCs.startValue + (dx / (activeCs.width || 100)) * activeCs.range;
+    const v = Math.round(Math.min(activeCs.max, Math.max(activeCs.min, raw)));
+    const input = wrap.querySelector('input');
+    if (parseFloat(input.value) !== v) {
+      input.value = v;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    syncCs(wrap);
+  });
+}
+
+// Keep the custom thumb/fill in sync when the app sets values programmatically
+// (selecting a sticker, undo/redo, reset) or when the layout resizes.
+const csValues = new Map();
+function csSyncLoop() {
+  document.querySelectorAll('.cs').forEach(function(wrap) {
+    const input = wrap.querySelector('input');
+    const v = input.value;
+    const w = wrap.clientWidth;
+    const prev = csValues.get(wrap);
+    if (!prev || prev.v !== v || prev.w !== w) { csValues.set(wrap, { v: v, w: w }); syncCs(wrap); }
+  });
+  requestAnimationFrame(csSyncLoop);
+}
+
+buildCustomSliders();
+csSyncLoop();
 </script>
 </body>
 </html>
