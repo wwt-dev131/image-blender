@@ -1334,9 +1334,11 @@ function onTouchStart(e) {
     // Pinch to scale
     interactionMode = 'pinch';
     const t1 = e.touches[0], t2 = e.touches[1];
+    const _s = stickers.find(s => s.id === selectedId);
     dragStartSticker = {
       dist: Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY),
-      width: stickers.find(s => s.id === selectedId).width,
+      width: _s.width,
+      height: _s.height,
     };
     e.preventDefault();
   }
@@ -1348,8 +1350,9 @@ function onTouchMove(e) {
     const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
     const scale = dist / dragStartSticker.dist;
     const sticker = stickers.find(s => s.id === selectedId);
+    // scale both dimensions from their pinch-start values so the aspect is kept
     sticker.width = Math.max(10, Math.round(dragStartSticker.width * scale));
-    sticker.height = Math.max(10, Math.round(dragStartSticker.width * scale * (sticker.height / sticker.width || 1)));
+    sticker.height = Math.max(10, Math.round(dragStartSticker.height * scale));
     render();
     e.preventDefault();
   } else if (interactionMode && e.touches.length === 1) {
