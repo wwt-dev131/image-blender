@@ -3283,17 +3283,36 @@ function downloadResult() {
   // Download
   exportCanvas.toBlob((blob) => {
     if (!blob) { showToast('❌ 导出失败'); return; }
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'composite_' + Date.now() + '.' + ext;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    // Revoke after a beat so the in-flight download isn't killed (avoids ERR_FILE_NOT_FOUND)
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    const filename = 'composite_' + Date.now() + '.' + ext;
     const sizeKB = (blob.size / 1024).toFixed(0);
-    showToast('✅ ' + ext.toUpperCase() + ' ' + sizeKB + 'KB 已下载');
+    // 浏览器下载回退（桌面端 / 不支持系统分享时）
+    const doDownload = () => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      // Revoke after a beat so the in-flight download isn't killed (avoids ERR_FILE_NOT_FOUND)
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      showToast('✅ ' + ext.toUpperCase() + ' ' + sizeKB + 'KB 已下载');
+    };
+
+    // 手机端优先走系统分享面板：iOS 选「储存图像」、安卓选「保存到设备/相册」，直接进相册
+    let file = null;
+    try { file = new File([blob], filename, { type: mimeType }); } catch (e) {}
+    if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+      navigator.share({ files: [file], title: '合成图片', text: '图片合成器导出' })
+        .then(() => showToast('✅ 已保存到相册'))
+        .catch((err) => {
+          // 用户主动关掉分享面板 → 不算失败，不弹错误
+          if (err && err.name === 'AbortError') return;
+          doDownload(); // 分享失败 → 回退浏览器下载
+        });
+    } else {
+      doDownload();
+    }
   }, mimeType, quality);
 }
 
