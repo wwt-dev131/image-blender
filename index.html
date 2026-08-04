@@ -306,6 +306,12 @@ canvas {
       <input type="range" id="exportQuality" min="10" max="100" value="90" style="width:60px;accent-color:#14b8a6;" oninput="document.getElementById('exportQualityVal').textContent=this.value+'%'">
       <span id="exportQualityVal" style="font-size:11px;color:#64748b;min-width:32px;">90%</span>
     </span>
+    <select id="exportScale" title="导出分辨率" style="background:#f1f5f9;color:#1f2937;border:1px solid #cbd5e1;border-radius:6px;padding:6px 8px;font-size:12px;cursor:pointer;outline:none;">
+      <option value="1">1×</option>
+      <option value="2">2×</option>
+      <option value="4">4×</option>
+      <option value="orig">原图</option>
+    </select>
     <button class="btn-primary" onclick="downloadResult()" title="下载合成图片">⬇ 下载</button>
   </div>
 </div>
@@ -564,25 +570,33 @@ async function loadCustomStickers() {
   }
 }
 
-async function saveCustomStickers() {
+// Incremental saves: put/delete one sticker at a time (avoids rewriting all entries)
+async function putSticker(s) {
   try {
     const db = await openDB();
     const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    store.clear();
-    for (const s of customStickers) {
-      store.put(s);
-    }
+    tx.objectStore(STORE_NAME).put(s);
     await new Promise((resolve, reject) => {
-      tx.oncomplete = () => {
-        console.log('💾 IndexedDB 保存了 ' + customStickers.length + ' 个贴图');
-        resolve();
-      };
+      tx.oncomplete = () => { console.log('💾 贴图已保存:', s.name); resolve(); };
       tx.onerror = () => reject(tx.error);
     });
   } catch (e) {
     console.error('❌ 保存贴图失败:', e);
     showToast('❌ 保存失败，请重试');
+  }
+}
+
+async function deleteSticker(id) {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).delete(id);
+    await new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (e) {
+    console.error('❌ 删除贴图失败:', e);
   }
 }
 
@@ -611,6 +625,32 @@ function resizeImageDataUrl(dataUrl, maxDim, callback) {
     callback(dataUrl);
   };
   img.src = dataUrl;
+}
+
+// Encode a full-res image to a compressed WebP Blob, capped at maxDim (preserves alpha).
+// Much smaller than PNG data URLs → keeps the sticker library (100–200 items) lightweight.
+function encodeImageToBlob(img, maxDim, callback) {
+  try {
+    let w = img.naturalWidth, h = img.naturalHeight;
+    if (!w || !h) { callback(null); return; }
+    if (w > maxDim || h > maxDim) {
+      const s = Math.min(maxDim / w, maxDim / h);
+      w = Math.round(w * s);
+      h = Math.round(h * s);
+    }
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const cc = c.getContext('2d');
+    if (cc.imageSmoothingQuality) cc.imageSmoothingQuality = 'high';
+    cc.drawImage(img, 0, 0, w, h);
+    c.toBlob((blob) => {
+      if (blob && blob.size > 0) callback(blob);
+      else callback(null); // fallback handled by caller
+    }, 'image/webp', 0.92);
+  } catch (e) {
+    console.error('贴图编码失败:', e);
+    callback(null);
+  }
 }
 
 function renderCustomStickerGrid() {
@@ -642,14 +682,17 @@ function addCustomStickerById(id) {
   const sticker = customStickers.find(s => s.id === id);
   if (!sticker) return;
   const img = new Image();
-  img.onload = () => addImageSticker(img);
-  img.src = sticker.dataUrl; // Use full-res for canvas
+  img.onload = () => {
+    addImageSticker(img);
+    if (sticker.blob) URL.revokeObjectURL(img.src); // release the temp object URL
+  };
+  img.src = sticker.blob ? URL.createObjectURL(sticker.blob) : sticker.dataUrl;
 }
 
 function deleteCustomSticker(id) {
   if (!confirm('确定删除这个贴图吗？')) return;
   customStickers = customStickers.filter(s => s.id !== id);
-  saveCustomStickers();
+  deleteSticker(id);
   renderCustomStickerGrid();
   showToast('🗑 贴图已删除');
 }
@@ -668,6 +711,7 @@ function initCanvas(w, h) {
   canvas.height = h || s.h;
   canvas.style.width = canvas.width + 'px';
   canvas.style.height = canvas.height + 'px';
+  if (ctx.imageSmoothingQuality) ctx.imageSmoothingQuality = 'high';
 }
 
 function fitBackgroundToCanvas(img) {
@@ -1432,15 +1476,14 @@ async function handleStickerUpload(event) {
     const name = file.name.replace(/\.[^.]+$/, '');
     const id = 'custom_' + Date.now();
 
-    // Step 1: Resize to 400px for canvas use (keeps quality, small file size ~50-100KB)
-    resizeImageDataUrl(originalDataUrl, 400, (dataUrl400) => {
-      // Step 2: Create 128px thumbnail for grid display (~10-20KB)
-      resizeImageDataUrl(dataUrl400, 128, (thumb128) => {
-        const stickerEntry = { id, name, dataUrl: dataUrl400, thumb: thumb128 };
+    // Full-res (capped 2048px) WebP Blob for crisp canvas use; 128px PNG thumb for the grid
+    encodeImageToBlob(img, 2048, (blob) => {
+      resizeImageDataUrl(originalDataUrl, 128, (thumb128) => {
+        const stickerEntry = { id, name, thumb: thumb128 };
+        if (blob) stickerEntry.blob = blob; else stickerEntry.dataUrl = originalDataUrl; // fallback: original
         customStickers.push(stickerEntry);
-        saveCustomStickers();
+        putSticker(stickerEntry);
         renderCustomStickerGrid();
-        console.log('💾 贴图已保存:', name, '400px=' + (dataUrl400.length/1024).toFixed(0) + 'KB', '128px=' + (thumb128.length/1024).toFixed(0) + 'KB');
         showToast('✅ 贴图已添加并保存');
       });
     });
@@ -1499,10 +1542,12 @@ async function handleDrop(e) {
       const id = 'custom_' + Date.now();
       const exists = customStickers.some(s => s.name === name);
       if (!exists) {
-        resizeImageDataUrl(originalDataUrl, 400, (dataUrl400) => {
-          resizeImageDataUrl(dataUrl400, 128, (thumb128) => {
-            customStickers.push({ id, name, dataUrl: dataUrl400, thumb: thumb128 });
-            saveCustomStickers();
+        encodeImageToBlob(img, 2048, (blob) => {
+          resizeImageDataUrl(originalDataUrl, 128, (thumb128) => {
+            const entry = { id, name, thumb: thumb128 };
+            if (blob) entry.blob = blob; else entry.dataUrl = originalDataUrl;
+            customStickers.push(entry);
+            putSticker(entry);
             renderCustomStickerGrid();
           });
         });
@@ -3140,16 +3185,23 @@ function applyBgrm() {
 function saveBgrmToLibrary() {
   const url = getBgrmCropUrl();
   if (!url) { showToast('⚠️ 没抠出内容'); return; }
-  resizeImageDataUrl(url, 400, (dataUrl400) => {
-    resizeImageDataUrl(dataUrl400, 128, (thumb128) => {
-      const id = 'custom_' + Date.now();
-      const name = '抠图贴纸 ' + new Date().toLocaleTimeString();
-      customStickers.push({ id: id, name: name, dataUrl: dataUrl400, thumb: thumb128 });
-      saveCustomStickers();
-      renderCustomStickerGrid();
-      showToast('✅ 已存入贴图库');
+  const img = new Image();
+  img.onload = () => {
+    encodeImageToBlob(img, 2048, (blob) => {
+      resizeImageDataUrl(url, 128, (thumb128) => {
+        const id = 'custom_' + Date.now();
+        const name = '抠图贴纸 ' + new Date().toLocaleTimeString();
+        const entry = { id, name, thumb: thumb128 };
+        if (blob) entry.blob = blob; else entry.dataUrl = url;
+        customStickers.push(entry);
+        putSticker(entry);
+        renderCustomStickerGrid();
+        showToast('✅ 已存入贴图库');
+      });
     });
-  });
+  };
+  img.onerror = () => showToast('❌ 抠图结果加载失败');
+  img.src = url;
 }
 
 // ==================== EXPORT ====================
@@ -3166,10 +3218,25 @@ function downloadResult() {
   else if (format === 'webp') { mimeType = 'image/webp'; ext = 'webp'; }
   else { mimeType = 'image/png'; ext = 'png'; }
 
+  // Export resolution: multiplier, or "原图" = source image native size (bgImage stays full-res)
+  const scaleSel = document.getElementById('exportScale');
+  let scale = 1;
+  if (scaleSel) {
+    const v = scaleSel.value;
+    scale = (v === 'orig')
+      ? (bgImage ? Math.max(1, bgImage.naturalWidth / canvas.width) : 1)
+      : (parseFloat(v) || 1);
+  }
+  // Cap the largest export side at 8192px to avoid huge canvases / memory blow-up
+  const maxSide = Math.max(canvas.width, canvas.height) * scale;
+  if (maxSide > 8192) scale *= 8192 / maxSide;
+
   const exportCanvas = document.createElement('canvas');
-  exportCanvas.width = canvas.width;
-  exportCanvas.height = canvas.height;
+  exportCanvas.width = Math.round(canvas.width * scale);
+  exportCanvas.height = Math.round(canvas.height * scale);
   const exportCtx = exportCanvas.getContext('2d');
+  exportCtx.scale(scale, scale);
+  if (exportCtx.imageSmoothingQuality) exportCtx.imageSmoothingQuality = 'high';
 
   // JPEG/WebP need opaque background; fill white first if no bgImage
   const needsOpaqueBg = (format === 'jpeg') && !bgImage;
@@ -3223,7 +3290,8 @@ function downloadResult() {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    // Revoke after a beat so the in-flight download isn't killed (avoids ERR_FILE_NOT_FOUND)
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
     const sizeKB = (blob.size / 1024).toFixed(0);
     showToast('✅ ' + ext.toUpperCase() + ' ' + sizeKB + 'KB 已下载');
   }, mimeType, quality);
