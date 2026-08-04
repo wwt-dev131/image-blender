@@ -81,6 +81,18 @@ body {
 .upload-sticker-btn:hover { border-color: #14b8a6; color: #1f2937; }
 .upload-split { display: flex; gap: 6px; margin-top: auto; flex-shrink: 0; }
 .upload-split .upload-sticker-btn { margin-top: 0; flex: 1; }
+/* Sticker library: categories + sort */
+.library-split { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 6px; }
+.library-cats { order: -1; display: flex; flex-direction: row; flex-wrap: wrap; gap: 4px; flex-shrink: 0; }
+.library-files { order: 0; display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.library-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-shrink: 0; padding-bottom: 4px; }
+.library-sort { font-size: 11px; color: #64748b; cursor: pointer; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 6px; padding: 3px 8px; user-select: none; }
+.library-sort:hover { border-color: #14b8a6; }
+.cat-folder { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 4px 8px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 8px; cursor: pointer; color: #475569; user-select: none; white-space: nowrap; }
+.cat-folder.active { background: #14b8a6; color: #fff; border-color: #14b8a6; }
+.cat-folder .cat-count { font-size: 10px; opacity: 0.7; }
+.sticker-edit { position: absolute; left: 2px; top: 1px; font-size: 10px; cursor: pointer; opacity: 0.6; background: rgba(0,0,0,0.15); border-radius: 2px; padding: 0 2px; }
+.sticker-edit:hover { opacity: 1; }
 /* Sticker drawer toggle (mobile only) */
 .sidebar-toggle { display: none; }
 .sidebar-drawer { display: contents; }
@@ -270,6 +282,11 @@ canvas {
   .sidebar-section { padding: 6px 10px; display: block; }
   .sidebar-title { margin-bottom: 4px; }
   .emoji-grid { grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); overflow-y: visible; }
+  /* Mobile: sticker preview area splits left/right — files 3/4, category folders 1/4 */
+  .library-split { flex-direction: row; }
+  .library-files { order: 0; flex: 3; min-width: 0; }
+  .library-cats { order: 1; flex: 1; flex-direction: column; align-content: flex-start; }
+  .cat-folder { width: 100%; justify-content: flex-start; box-sizing: border-box; padding: 6px 8px; font-size: 12px; }
   .upload-split { margin-top: 8px; }
   .emoji-btn { font-size: 20px; }
   .upload-sticker-btn { padding: 8px; font-size: 11px; }
@@ -327,7 +344,16 @@ canvas {
     </div>
     <div class="sidebar-drawer" id="stickerDrawer">
       <div class="sidebar-section">
-        <div class="emoji-grid" id="custom-stickers-grid"></div>
+        <div class="library-split">
+          <div class="library-files">
+            <div class="library-toolbar">
+              <span style="font-size:11px;color:#64748b;">🗂 贴图库</span>
+              <span class="library-sort" id="sortToggle" onclick="toggleSortMode()">⏱ 时间</span>
+            </div>
+            <div class="emoji-grid" id="custom-stickers-grid"></div>
+          </div>
+          <div class="library-cats" id="libraryCats"></div>
+        </div>
         <div class="upload-split">
           <div class="upload-sticker-btn" onclick="document.getElementById('stickerUpload').click()">
             ➕ 上传贴图
@@ -415,6 +441,11 @@ canvas {
           <input type="range" id="propBlendStrength" min="5" max="100" value="25">
         </div>
         <div class="prop-row">
+          <span class="prop-label">融合带宽度</span>
+          <input type="range" id="propFusionBand" min="0" max="40" value="15" oninput="document.getElementById('propFusionBandVal').textContent=this.value">
+          <span class="prop-value" id="propFusionBandVal">15</span>
+        </div>
+        <div class="prop-row">
           <span class="prop-label">边缘柔化</span>
           <input type="range" id="propFeather" min="0" max="30" value="10">
           <span class="prop-value" id="propFeatherVal">10</span>
@@ -447,6 +478,11 @@ canvas {
           </select>
         </div>
         <div class="style-indicator" id="styleIndicator" style="display:none;font-size:11px;color:#14b8a6;text-align:center;padding:3px 0;"></div>
+        <div class="prop-row" style="margin-top:4px;">
+          <label style="flex:1;display:flex;align-items:center;gap:6px;font-size:12px;color:#334155;cursor:pointer;">
+            <input type="checkbox" id="autoBlendToggle" style="width:15px;height:15px;cursor:pointer;"> 自动融合
+          </label>
+        </div>
         <button class="btn-blend" id="btnBlend" onclick="autoBlend()" disabled>
           ✨ 贴图融合
         </button>
@@ -496,9 +532,34 @@ canvas {
   </div>
 </div>
 
+<!-- Save-to-library dialog: custom name + category -->
+<div class="modal-mask" id="saveStickerModal" style="display:none;">
+  <div class="modal-box">
+    <div class="modal-title">💾 存入贴图库</div>
+    <div class="prop-row">
+      <span class="prop-label">名字</span>
+      <input id="ssName" style="flex:1;background:#fff;color:#1f2937;border:1px solid #e2e8f0;border-radius:5px;padding:6px 8px;font-size:12px;outline:none;" placeholder="给贴图起个名字">
+    </div>
+    <div class="prop-row">
+      <span class="prop-label">分类</span>
+      <select id="ssCat" onchange="onSsCatChange()" style="flex:1;background:#fff;color:#1f2937;border:1px solid #e2e8f0;border-radius:5px;padding:6px 8px;font-size:12px;cursor:pointer;outline:none;"></select>
+    </div>
+    <div class="prop-row" id="ssNewCatRow" style="display:none;">
+      <span class="prop-label">新分类</span>
+      <input id="ssNewCat" style="flex:1;background:#fff;color:#1f2937;border:1px solid #e2e8f0;border-radius:5px;padding:6px 8px;font-size:12px;outline:none;" placeholder="输入分类名（可带 emoji）">
+    </div>
+    <div class="modal-actions">
+      <button class="btn-outline" onclick="closeSaveStickerModal()">✕ 取消</button>
+      <button class="btn-primary" onclick="confirmSaveSticker()">💾 保存</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ==================== DATA ====================
-let customStickers = [];  // { id, name, dataUrl, thumb } — persisted in IndexedDB
+let customStickers = [];  // { id, name, cat, createdAt, lastUsedAt, hue, dataUrl, thumb } — persisted in IndexedDB
+let activeCat = 'all';    // 'all' = 最近/全部; '' = 未分类; else 分类名
+let sortMode = 'time';    // 'time' | 'color'
 
 // ==================== STATE ====================
 let bgImage = null;              // HTMLImageElement of background
@@ -670,16 +731,73 @@ function encodeImageToBlob(img, maxDim, callback) {
   }
 }
 
+// ---- 贴图库分类 + 排序 ----
+
+// 分类列表（从已保存贴图推导；'all'=最近/全部, ''=未分类）
+function getCategories() {
+  const map = new Map();
+  for (const s of customStickers) {
+    const c = s.cat || '';
+    map.set(c, (map.get(c) || 0) + 1);
+  }
+  const list = [{ id: 'all', name: '🕒 最近', count: customStickers.length }];
+  for (const [id, count] of map) {
+    list.push({ id, name: (id === '' ? '📄 未分类' : '🗂 ' + id), count });
+  }
+  return list;
+}
+
+function sortedStickers(list) {
+  if (sortMode === 'color') {
+    return list.slice().sort((a, b) => (a.hue ?? 0) - (b.hue ?? 0));
+  }
+  // time：最近使用/最近保存优先
+  return list.slice().sort((a, b) =>
+    (b.lastUsedAt || b.createdAt || 0) - (a.lastUsedAt || a.createdAt || 0));
+}
+
+function visibleStickers() {
+  if (activeCat === 'all') return sortedStickers(customStickers);
+  return sortedStickers(customStickers.filter(s => (s.cat || '') === activeCat));
+}
+
+function renderCategoryList() {
+  const wrap = document.getElementById('libraryCats');
+  if (!wrap) return;
+  wrap.innerHTML = getCategories().map(c => `
+    <div class="cat-folder ${c.id === activeCat ? 'active' : ''}" data-cat="${c.id.replace(/"/g, '&quot;')}" onclick="setActiveCat(this.dataset.cat)">
+      <span>${c.name}</span>
+      <span class="cat-count">${c.count}</span>
+    </div>
+  `).join('');
+}
+
+function setActiveCat(cat) {
+  activeCat = cat;
+  renderCategoryList();
+  renderCustomStickerGrid();
+}
+
+function toggleSortMode() {
+  sortMode = (sortMode === 'time') ? 'color' : 'time';
+  const btn = document.getElementById('sortToggle');
+  if (btn) btn.textContent = sortMode === 'time' ? '⏱ 时间' : '🎨 颜色';
+  renderCustomStickerGrid();
+}
+
 function renderCustomStickerGrid() {
   const grid = document.getElementById('custom-stickers-grid');
   if (!grid) return;
-  if (customStickers.length === 0) {
-    grid.innerHTML = '<div style="grid-column:1/-1;color:#94a3b8;font-size:12px;text-align:center;padding:12px;">暂无贴图<br>点击下方按钮上传</div>';
+  const list = visibleStickers();
+  if (list.length === 0) {
+    grid.innerHTML = '<div style="grid-column:1/-1;color:#94a3b8;font-size:12px;text-align:center;padding:12px;">' +
+      (activeCat === 'all' ? '暂无贴图<br>点击下方按钮上传' : '这个分类还没有贴图') + '</div>';
     return;
   }
-  grid.innerHTML = customStickers.map((s, idx) => `
-    <div class="emoji-btn" style="position:relative;overflow:hidden;" title="${s.name}" onclick="addCustomStickerById('${s.id}')">
-      <img src="${s.thumb || s.dataUrl}" style="width:100%;height:100%;object-fit:contain;" alt="${s.name}">
+  grid.innerHTML = list.map(s => `
+    <div class="emoji-btn" style="position:relative;overflow:hidden;" title="${(s.name || '').replace(/"/g, '&quot;')}" onclick="addCustomStickerById('${s.id}')">
+      <img src="${s.thumb || s.dataUrl}" style="width:100%;height:100%;object-fit:contain;" alt="${(s.name || '').replace(/"/g, '&quot;')}">
+      <span class="sticker-edit" onclick="event.stopPropagation();editSticker('${s.id}')" title="改名 / 换分类">✎</span>
       <span style="position:absolute;top:1px;right:2px;font-size:10px;cursor:pointer;opacity:0.6;background:rgba(0,0,0,0.15);border-radius:2px;padding:0 2px;"
             onclick="event.stopPropagation();deleteCustomSticker('${s.id}')"
             title="删除贴图">✕</span>
@@ -692,7 +810,7 @@ function toggleStickerDrawer() {
   const sidebar = document.querySelector('.sidebar');
   if (!sidebar) return;
   const expanded = sidebar.classList.toggle('expanded');
-  if (expanded) renderCustomStickerGrid(); // refresh in case stickers changed while closed
+  if (expanded) { renderCategoryList(); renderCustomStickerGrid(); } // refresh in case stickers changed while closed
 }
 
 function addCustomStickerById(id) {
@@ -704,14 +822,131 @@ function addCustomStickerById(id) {
     if (sticker.blob) URL.revokeObjectURL(img.src); // release the temp object URL
   };
   img.src = sticker.blob ? URL.createObjectURL(sticker.blob) : sticker.dataUrl;
+  // 最近使用：更新时间戳（不打断当前网格，下次渲染自然排到前面）
+  if (sticker) {
+    sticker.lastUsedAt = Date.now();
+    putSticker(sticker);
+  }
 }
 
 function deleteCustomSticker(id) {
   if (!confirm('确定删除这个贴图吗？')) return;
   customStickers = customStickers.filter(s => s.id !== id);
   deleteSticker(id);
+  renderCategoryList();
   renderCustomStickerGrid();
   showToast('🗑 贴图已删除');
+}
+
+// ---- 贴图库：保存弹窗（自定义名字 + 选择/新建分类） ----
+
+let savePending = null; // { dataUrl, blob, thumb, defaultName, cat, editId, createdAt, lastUsedAt }
+
+// 计算贴图主色调（H 色相 0-360），用于按颜色排序
+function computeHue(dataUrl, callback) {
+  const img = new Image();
+  img.onload = () => {
+    try {
+      const c = document.createElement('canvas');
+      c.width = 32; c.height = 32;
+      const cc = c.getContext('2d');
+      cc.drawImage(img, 0, 0, 32, 32);
+      const d = cc.getImageData(0, 0, 32, 32).data;
+      let r = 0, g = 0, b = 0, n = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        if (d[i + 3] < 30) continue;
+        r += d[i]; g += d[i + 1]; b += d[i + 2]; n++;
+      }
+      if (!n) { callback(0); return; }
+      r /= n; g /= n; b /= n;
+      const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+      let h = 0;
+      if (mx === mn) h = 0;
+      else if (mx === r) h = 60 * ((g - b) / (mx - mn));
+      else if (mx === g) h = 60 * (2 + (b - r) / (mx - mn));
+      else h = 60 * (4 + (r - g) / (mx - mn));
+      callback(((h % 360) + 360) % 360);
+    } catch (e) { callback(0); }
+  };
+  img.onerror = () => callback(0);
+  img.src = dataUrl;
+}
+
+function fillCatOptions(selectedCat) {
+  const sel = document.getElementById('ssCat');
+  let html = '<option value="">未分类</option>';
+  for (const c of getCategories()) {
+    if (c.id === 'all' || c.id === '') continue;
+    html += `<option value="${c.id.replace(/"/g, '&quot;')}">${c.name}</option>`;
+  }
+  html += '<option value="__new">➕ 新建分类</option>';
+  sel.innerHTML = html;
+  sel.value = selectedCat || '';
+  document.getElementById('ssNewCatRow').style.display = (sel.value === '__new') ? '' : 'none';
+}
+
+function openSaveStickerDialog(pending) {
+  savePending = pending;
+  document.getElementById('ssName').value = pending.defaultName || '';
+  fillCatOptions(pending.cat || '');
+  document.getElementById('saveStickerModal').style.display = 'flex';
+  setTimeout(() => { try { document.getElementById('ssName').focus(); } catch (e) {} }, 50);
+}
+
+function onSsCatChange() {
+  document.getElementById('ssNewCatRow').style.display =
+    (document.getElementById('ssCat').value === '__new') ? '' : 'none';
+}
+
+function closeSaveStickerModal() {
+  document.getElementById('saveStickerModal').style.display = 'none';
+  savePending = null;
+}
+
+function confirmSaveSticker() {
+  const p = savePending;
+  if (!p) return;
+  let cat = document.getElementById('ssCat').value;
+  const name = (document.getElementById('ssName').value || '').trim() || '贴图';
+  if (cat === '__new') {
+    cat = (document.getElementById('ssNewCat').value || '').trim();
+    if (!cat) { showToast('⚠️ 请填写分类名'); return; }
+  }
+  const id = p.editId || ('custom_' + Date.now());
+  const entry = {
+    id,
+    name,
+    cat: cat || '',   // '' = 未分类
+    createdAt: p.createdAt || Date.now(),
+    lastUsedAt: p.lastUsedAt || 0,
+    thumb: p.thumb,
+  };
+  if (p.blob) entry.blob = p.blob; else entry.dataUrl = p.dataUrl;
+  const idx = customStickers.findIndex(s => s.id === id);
+  if (idx >= 0) customStickers[idx] = entry; else customStickers.push(entry);
+  renderCategoryList();
+  renderCustomStickerGrid();
+  computeHue(p.thumb || p.dataUrl, (hue) => {
+    entry.hue = hue;
+    putSticker(entry);
+  });
+  closeSaveStickerModal();
+  showToast(p.editId ? '✅ 已更新' : '✅ 已存入贴图库');
+}
+
+function editSticker(id) {
+  const s = customStickers.find(x => x.id === id);
+  if (!s) return;
+  openSaveStickerDialog({
+    dataUrl: s.dataUrl || '',
+    blob: s.blob || null,
+    thumb: s.thumb,
+    defaultName: s.name,
+    cat: s.cat || '',
+    editId: s.id,
+    createdAt: s.createdAt,
+    lastUsedAt: s.lastUsedAt,
+  });
 }
 
 // ==================== CANVAS SETUP ====================
@@ -936,6 +1171,12 @@ async function addImageSticker(img) {
   selectSticker(sticker.id);
   render();
   hideDropZone();
+
+  // 自动融合（默认关）：勾选后贴图一放到底图才自动调色/去白边。
+  // 默认不自动融——用户还要先调位置/大小/角度，融早了采样区域是错的。
+  if (bgImage && document.getElementById('autoBlendToggle') && document.getElementById('autoBlendToggle').checked) {
+    setTimeout(() => { if (selectedId) autoBlend(); }, 60);
+  }
 }
 
 function selectSticker(id) {
@@ -1509,11 +1750,15 @@ async function handleStickerUpload(event) {
     // Full-res (capped 2048px) WebP Blob for crisp canvas use; 128px PNG thumb for the grid
     encodeImageToBlob(img, 2048, (blob) => {
       resizeImageDataUrl(originalDataUrl, 128, (thumb128) => {
-        const stickerEntry = { id, name, thumb: thumb128 };
+        // 上传的贴图快速存到「未分类」，之后可点 ✎ 改名/换分类
+        const stickerEntry = {
+          id, name, cat: '', createdAt: Date.now(), lastUsedAt: Date.now(), thumb: thumb128,
+        };
         if (blob) stickerEntry.blob = blob; else stickerEntry.dataUrl = originalDataUrl; // fallback: original
         customStickers.push(stickerEntry);
-        putSticker(stickerEntry);
+        renderCategoryList();
         renderCustomStickerGrid();
+        computeHue(thumb128, (hue) => { stickerEntry.hue = hue; putSticker(stickerEntry); });
         showToast('✅ 贴图已添加并保存');
       });
     });
@@ -1574,11 +1819,14 @@ async function handleDrop(e) {
       if (!exists) {
         encodeImageToBlob(img, 2048, (blob) => {
           resizeImageDataUrl(originalDataUrl, 128, (thumb128) => {
-            const entry = { id, name, thumb: thumb128 };
+            const entry = {
+              id, name, cat: '', createdAt: Date.now(), lastUsedAt: Date.now(), thumb: thumb128,
+            };
             if (blob) entry.blob = blob; else entry.dataUrl = originalDataUrl;
             customStickers.push(entry);
-            putSticker(entry);
+            renderCategoryList();
             renderCustomStickerGrid();
+            computeHue(thumb128, (hue) => { entry.hue = hue; putSticker(entry); });
           });
         });
       }
@@ -1609,6 +1857,7 @@ function autoBlend() {
   const blendStrength = parseInt(document.getElementById('propBlendStrength').value) / 100;
   const featherAmount = parseInt(document.getElementById('propFeather').value);
   const defringeAmount = parseInt(document.getElementById('propDefringe').value) || 0;
+  const fusionBand = parseInt(document.getElementById('propFusionBand').value);
   const manualLightAngle = parseInt(document.getElementById('propLightAngle').value);
 
   // Quick analysis of background and sticker (lightweight)
@@ -1625,6 +1874,7 @@ function autoBlend() {
     blendStrength,
     featherAmount,
     defringeAmount,
+    fusionBand,
     lightAngle: manualLightAngle,
     stylePreset,
   });
@@ -1633,6 +1883,7 @@ function autoBlend() {
     blendStrength,
     featherAmount,
     defringeAmount,
+    fusionBand,
     lightAngle: manualLightAngle,
     style: styleKey,
     bgLuminance: bg.meanL,
@@ -1902,7 +2153,7 @@ function computeEdgeDistance(data, w, h) {
 }
 
 function applyAutoBlend(sticker, bg, st, params) {
-  const { blendStrength, featherAmount, defringeAmount, lightAngle, stylePreset } = params;
+  const { blendStrength, featherAmount, defringeAmount, fusionBand, lightAngle, stylePreset } = params;
 
   // Get sticker pixel data at natural resolution
   const img = sticker.originalImage;
@@ -1919,31 +2170,69 @@ function applyAutoBlend(sticker, bg, st, params) {
   // === Step 1: Compute content-aware edge distance ===
   const edgeDist = computeEdgeDistance(data, imgW, imgH);
 
-  // Feather: 2–15 px range, controlled by featherAmount (0-30 → 2-15px)
-  const featherPx = 2 + Math.round(featherAmount * 13 / 30);
-  // Defringe: mask contraction 0–5px to strip the old-background halo (white fringe)
-  const defringePx = Math.round((defringeAmount || 0) / 100 * 5);
+  // === 溶图 V2：融合强度从边缘向内部径向平滑衰减 ===
+  // 边缘全力贴合背景（色彩/明暗对齐），越往主体内部强度越低（保底色不褪成半透明），
+  // 内部仍轻微跟随背景色调，保证整体氛围统一。羽化/去白边都按贴图尺寸比例计算。
+  const shortSide = Math.min(imgW, imgH);
 
-  // === Subtle exposure compensation ===
-  // Only shift brightness slightly (max ~20% of the difference) so the sticker
-  // doesn't look like a glowing cutout on dark backgrounds or vanish on bright ones.
-  // blendStrength (10-100) maps to a max correction of 5%-25% of the BG/sticker gap.
-  const maxCorrection = 0.05 + (blendStrength / 100) * 0.20; // 5% to 25%
-  const lumDiff = bg.meanL - st.meanL;
-  // Clamp: never shift more than ±40 luminance points
-  const lumShift = Math.max(-40, Math.min(40, lumDiff * maxCorrection));
+  // Feather: proportional to sticker size (2%–14% of short side, capped 40px)
+  // so small stickers don't get eaten by a fixed-px feather.
+  const featherPx = Math.min(40, Math.max(2, Math.round(shortSide * (0.02 + featherAmount / 30 * 0.12))));
+  // Defringe: mask contraction, proportional (0–8% of short side, capped 10px)
+  const defringePx = Math.min(10, Math.round(shortSide * (defringeAmount || 0) / 100 * 0.08));
 
-  // Color temperature: very subtle warm/cool hint (max ±3)
-  const tempShift = (bg.meanR - bg.meanB) / 256 * maxCorrection * 3;
+  // Fusion band: radial falloff width (2%–20% of short side), driven by 融合带滑块.
+  const bandPx = Math.max(4, Math.round(shortSide * (0.02 + (fusionBand || 0) / 40 * 0.18)));
+  // Interior baseline fusion strength: tone still gently follows bg, weak enough to keep the sticker's own color.
+  const wMin = 0.08 + blendStrength * 0.22;
+  // Edge distance d (px from the sticker silhouette) → weight. d=0 → 1 (full fusion),
+  // decays smoothly to wMin beyond the band.
+  const fusionWeight = (d) => {
+    const t = Math.min(1, d / bandPx);
+    const s = t * t * (3 - 2 * t); // smoothstep 0→1
+    return wMin + (1 - wMin) * (1 - s);
+  };
 
-  console.log('🎨 融合（保留贴图原色）:', {
-    羽化像素: featherPx,
-    曝光补偿: lumShift.toFixed(1) + ' / ' + lumDiff.toFixed(0) + ' 差距',
-    修正比例: (maxCorrection * 100).toFixed(0) + '%',
-    色温微调: tempShift.toFixed(1),
+  // === Color harmonization: pull the sticker's per-channel means and saturation
+  // toward the surrounding background region so it "sits in" the scene.
+  // blendStrength (0-1) maps to a correction strength of 15%-50% of the gap.
+  const strength = 0.15 + blendStrength * 0.35;
+  const shiftR = Math.max(-70, Math.min(70, (bg.meanR - st.meanR) * strength));
+  const shiftG = Math.max(-70, Math.min(70, (bg.meanG - st.meanG) * strength));
+  const shiftB = Math.max(-70, Math.min(70, (bg.meanB - st.meanB) * strength));
+  const satRatio = st.meanSat > 2 ? bg.meanSat / st.meanSat : 1;
+  const satFactor = 1 + (Math.max(0.5, Math.min(1.5, satRatio)) - 1) * strength;
+
+  // === Auto white-fringe detection: if the near-edge halo is much brighter and
+  // whiter than the sticker interior, enable defringe automatically. ===
+  let effDefringePx = defringePx;
+  if (defringePx < 1) {
+    let hR = 0, hG = 0, hB = 0, hN = 0, iR = 0, iG = 0, iB = 0, iN = 0;
+    for (let p = 0; p < data.length; p += 4) {
+      if (data[p + 3] < 20) continue;
+      const d = edgeDist[p / 4];
+      if (d < 3) { hR += data[p]; hG += data[p + 1]; hB += data[p + 2]; hN++; }
+      else if (d > 6) { iR += data[p]; iG += data[p + 1]; iB += data[p + 2]; iN++; }
+    }
+    if (hN > 0 && iN > 0) {
+      const hL = (0.299 * hR + 0.587 * hG + 0.114 * hB) / hN;
+      const iL = (0.299 * iR + 0.587 * iG + 0.114 * iB) / iN;
+      const hSat = (Math.max(hR, hG, hB) - Math.min(hR, hG, hB)) / hN;
+      if (hL - iL > 25 && hSat < 40) { effDefringePx = Math.max(effDefringePx, 3); }
+    }
+  }
+
+  console.log('🎨 融合（自动协调）:', {
+    羽化像素: featherPx + 'px',
+    去白边: effDefringePx + (effDefringePx > defringePx ? '（自动检测到白边）' : ''),
+    融合带: bandPx + 'px',
+    内部保底强度: (wMin * 100).toFixed(0) + '%',
+    通道偏移: 'R' + shiftR.toFixed(0) + ' G' + shiftG.toFixed(0) + ' B' + shiftB.toFixed(0),
+    饱和度系数: satFactor.toFixed(2),
+    协调强度: (strength * 100).toFixed(0) + '%',
   });
 
-  // === Step 2: Apply subtle adjustments + edge feather ===
+  // === Step 2: Apply harmonization + edge feather + defringe ===
   for (let i = 0; i < data.length; i += 4) {
     const a = data[i + 3];
     if (a < 10) continue;
@@ -1952,21 +2241,29 @@ function applyAutoBlend(sticker, bg, st, params) {
     let g = data[i + 1];
     let b = data[i + 2];
 
-    // Subtle exposure: scale RGB by luminance ratio (preserves hue)
-    const oldL = 0.299 * r + 0.587 * g + 0.114 * b;
-    const lRatio = oldL > 1 ? (oldL + lumShift) / oldL : 1;
-    r = Math.round(r * lRatio);
-    g = Math.round(g * lRatio);
-    b = Math.round(b * lRatio);
+    // Fusion weight: edge (d=0) → 1, interior → wMin, smooth radial decay.
+    const w = fusionWeight(edgeDist[i / 4]);
 
-    // Very subtle color temperature
-    r += tempShift;
-    b -= tempShift;
+    // Per-channel mean matching toward the bg region, scaled by fusion weight.
+    // Edge pixels shift a lot (blend into bg); interior shifts only wMin (tone follows,
+    // the sticker's own color stays intact) — kills the "faded/transparent" washout.
+    r += shiftR * w;
+    g += shiftG * w;
+    b += shiftB * w;
+
+    // Saturation harmonization scaled by weight, with a floor so the sticker's own
+    // color never gets crushed toward gray (the "变成透明一样" bug).
+    let satF = 1 + (satFactor - 1) * w;
+    satF = Math.max(satF, 0.55);
+    const l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    r = l + (r - l) * satF;
+    g = l + (g - l) * satF;
+    b = l + (b - l) * satF;
 
     // Clamp
-    data[i]     = Math.max(0, Math.min(255, r));
-    data[i + 1] = Math.max(0, Math.min(255, g));
-    data[i + 2] = Math.max(0, Math.min(255, b));
+    data[i]     = Math.max(0, Math.min(255, Math.round(r)));
+    data[i + 1] = Math.max(0, Math.min(255, Math.round(g)));
+    data[i + 2] = Math.max(0, Math.min(255, Math.round(b)));
 
     // Edge feather: fade alpha near content edges
     if (featherPx > 0) {
@@ -1980,10 +2277,10 @@ function applyAutoBlend(sticker, bg, st, params) {
 
     // Defringe: contract the mask to strip the old-background halo (white fringe).
     // Runs AFTER feather so both alpha fades compose (multiply).
-    if (defringePx > 0) {
+    if (effDefringePx > 0) {
       const d = edgeDist[i / 4];
-      if (d < defringePx) {
-        const t = d / defringePx;
+      if (d < effDefringePx) {
+        const t = d / effDefringePx;
         const smooth = t * t * (3 - 2 * t); // smoothstep
         data[i + 3] = Math.round(data[i + 3] * smooth);
       }
@@ -3238,14 +3535,14 @@ function saveBgrmToLibrary() {
   img.onload = () => {
     encodeImageToBlob(img, 2048, (blob) => {
       resizeImageDataUrl(url, 128, (thumb128) => {
-        const id = 'custom_' + Date.now();
-        const name = '抠图贴纸 ' + new Date().toLocaleTimeString();
-        const entry = { id, name, thumb: thumb128 };
-        if (blob) entry.blob = blob; else entry.dataUrl = url;
-        customStickers.push(entry);
-        putSticker(entry);
-        renderCustomStickerGrid();
-        showToast('✅ 已存入贴图库');
+        // 抠图存库：弹窗让用户自定义名字 + 选择/新建分类
+        openSaveStickerDialog({
+          dataUrl: url,
+          blob,
+          thumb: thumb128,
+          defaultName: '抠图贴纸 ' + new Date().toLocaleTimeString(),
+          cat: '',
+        });
       });
     });
   };
@@ -3566,6 +3863,7 @@ function fitCanvasToContainer() {
 }
 initCanvas();
 loadCustomStickers().then(() => {
+  renderCategoryList();
   renderCustomStickerGrid();
 });
 render();
