@@ -74,6 +74,8 @@ body {
   margin-top: 8px;
 }
 .upload-sticker-btn:hover { border-color: #14b8a6; color: #1f2937; }
+.upload-split { display: flex; gap: 6px; margin-top: 8px; }
+.upload-split .upload-sticker-btn { margin-top: 0; flex: 1; }
 
 /* ==================== Center - Canvas ==================== */
 .canvas-container {
@@ -292,8 +294,13 @@ canvas {
     <div class="sidebar-section">
       <div class="sidebar-title">📦 我的贴图</div>
       <div class="emoji-grid" id="custom-stickers-grid"></div>
-      <div class="upload-sticker-btn" onclick="document.getElementById('stickerUpload').click()">
-        ➕ 上传贴图
+      <div class="upload-split">
+        <div class="upload-sticker-btn" onclick="document.getElementById('stickerUpload').click()">
+          ➕ 上传贴图
+        </div>
+        <div class="upload-sticker-btn" onclick="document.getElementById('bgUpload').click()">
+          🖼 上传底图
+        </div>
       </div>
       <input type="file" id="stickerUpload" accept="image/png,image/webp,image/jpeg" hidden onchange="handleStickerUpload(event)">
     </div>
@@ -409,14 +416,6 @@ canvas {
 
 <!-- Toast -->
 <div class="toast" id="toast"></div>
-
-<!-- Bottom bar with quick actions (shown when no bg) -->
-<div id="bottomBar" style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:10;">
-  <button class="btn-primary" style="padding:12px 28px;font-size:15px;border-radius:10px;box-shadow:0 4px 20px rgba(20,184,166,0.4);"
-          onclick="document.getElementById('bgUpload').click()">
-    📁 上传底图
-  </button>
-</div>
 
 <!-- Background removal modal -->
 <div class="modal-mask" id="bgrmModal" style="display:none;">
@@ -843,7 +842,6 @@ function selectSticker(id) {
   selectedId = id;
   document.getElementById('noSelectionHint').style.display = 'none';
   document.getElementById('stickerProps').style.display = '';
-  document.getElementById('bottomBar').style.display = 'none';
   document.getElementById('btnBlend').disabled = !bgImage;
 
   const sticker = stickers.find(s => s.id === id);
@@ -867,7 +865,6 @@ function deselectAll() {
   selectedId = null;
   document.getElementById('noSelectionHint').style.display = '';
   document.getElementById('stickerProps').style.display = 'none';
-  if (!bgImage) document.getElementById('bottomBar').style.display = '';
   render();
 }
 
@@ -1369,7 +1366,6 @@ async function handleBgUpload(event) {
     bgImageData = ctx.getImageData(0, 0, dims.w, dims.h);
 
     hideDropZone();
-    document.getElementById('bottomBar').style.display = 'none';
     document.getElementById('btnBlend').disabled = !selectedId;
     render();
 
@@ -1447,7 +1443,6 @@ async function handleDrop(e) {
       ctx.drawImage(img, 0, 0, dims.w, dims.h);
       bgImageData = ctx.getImageData(0, 0, dims.w, dims.h);
       hideDropZone();
-      document.getElementById('bottomBar').style.display = 'none';
       render();
 
       // Auto-detect background style
@@ -3032,7 +3027,6 @@ function resetAll() {
   userStyleOverride = null;
   initCanvas();
   document.getElementById('dropZone').style.display = '';
-  document.getElementById('bottomBar').style.display = '';
   document.getElementById('noSelectionHint').style.display = '';
   document.getElementById('stickerProps').style.display = 'none';
   document.getElementById('btnBlend').disabled = true;
@@ -3109,7 +3103,6 @@ function restoreSnapshot(state) {
       ctx.drawImage(img, 0, 0, state.bgSnap.w, state.bgSnap.h);
       bgImageData = ctx.getImageData(0, 0, state.bgSnap.w, state.bgSnap.h);
       hideDropZone();
-      document.getElementById('bottomBar').style.display = 'none';
       document.getElementById('btnBlend').disabled = !selectedId;
       restoreStickersAndFinish(state);
     };
@@ -3118,7 +3111,6 @@ function restoreSnapshot(state) {
     bgImage = null; bgImageData = null;
     initCanvas();
     document.getElementById('dropZone').style.display = '';
-    document.getElementById('bottomBar').style.display = '';
     document.getElementById('btnBlend').disabled = true;
     restoreStickersAndFinish(state);
   }
@@ -3181,7 +3173,6 @@ function restoreStickersAndFinish(state) {
   } else {
     document.getElementById('noSelectionHint').style.display = '';
     document.getElementById('stickerProps').style.display = 'none';
-    if (!bgImage) document.getElementById('bottomBar').style.display = '';
   }
   render();
 }
