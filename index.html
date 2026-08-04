@@ -425,7 +425,7 @@ canvas {
   <div class="modal-box">
     <div class="modal-title">✨ 去背景</div>
     <div class="bgrm-mode-row">
-      <button class="btn-outline" id="btnBgrmLine" onclick="setBgrmMode('line')">✏️ 吸附线条</button>
+      <button class="btn-outline" id="btnBgrmLine" onclick="setBgrmMode('loop')">✏️ 画圈吸附</button>
       <button class="btn-outline" id="btnBgrmColor" onclick="setBgrmMode('color')">🎨 颜色</button>
     </div>
     <div class="bgrm-preview" id="bgrmPreviewWrap">
@@ -2683,9 +2683,10 @@ function openBgrm() {
     work: null,
     removed: new Uint8Array(w * h),
     seeds: [],
-    autoSeeds: [],
+    loop: [],
+    loopMask: null,
     edge: null,
-    mode: 'line',
+    mode: 'loop',
     cropUrl: null,
     cropSize: null,
     bgCanvas: bgCanvas,
@@ -2698,9 +2699,10 @@ function openBgrm() {
   document.getElementById('bgrmZoomVal').textContent = '1×';
   document.getElementById('btnBgrmLine').classList.add('active');
   document.getElementById('btnBgrmColor').classList.remove('active');
-  document.getElementById('bgrmHint').textContent = '✏️ 已自动吸附线条，不准就点背景提示，或调容差';
+  document.getElementById('bgrmHint').textContent = '✏️ 在物体周围画一个圈，松开后自动吸附到线条';
   bgrmState.edge = buildBgrmEdgeMap();
-  autoSnapBgrm();
+  bgrmState.loop = [];
+  bgrmState.loopMask = null;
   rebuildBgrm();
   updateBgrmButtons();
   redrawBgrmPreview();
@@ -2782,20 +2784,10 @@ function buildBgrmEdgeMap() {
 
 // 吸附线条 mode: auto-flood from the four corners (usually background), snapping
 // to the object's edges. Manual taps add more seeds.
-function autoSnapBgrm() {
-  const st = bgrmState;
-  st.autoSeeds = [
-    { x: 0, y: 0 }, { x: st.w - 1, y: 0 },
-    { x: 0, y: st.h - 1 }, { x: st.w - 1, y: st.h - 1 },
-  ];
-  for (const s of st.autoSeeds) floodRemoveBg(s.x, s.y);
-}
-
 function runAllBgrmSeeds() {
   const st = bgrmState;
   if (!st) return;
   st.removed.fill(0);
-  for (const s of st.autoSeeds) floodRemoveBg(s.x, s.y);
   for (const s of st.seeds) floodRemoveBg(s.x, s.y);
   rebuildBgrm();
   redrawBgrmPreview();
@@ -2804,20 +2796,72 @@ function runAllBgrmSeeds() {
 function setBgrmMode(mode) {
   if (!bgrmState) return;
   bgrmState.mode = mode;
-  document.getElementById('btnBgrmLine').classList.toggle('active', mode === 'line');
+  document.getElementById('btnBgrmLine').classList.toggle('active', mode === 'loop');
   document.getElementById('btnBgrmColor').classList.toggle('active', mode === 'color');
   bgrmState.removed.fill(0);
   bgrmState.seeds = [];
-  bgrmState.autoSeeds = [];
-  if (mode === 'line') {
-    autoSnapBgrm();
-    document.getElementById('bgrmHint').textContent = '✏️ 已自动吸附线条，不准就点背景提示，或调容差';
+  bgrmState.loop = [];
+  bgrmState.loopMask = null;
+  if (mode === 'loop') {
+    document.getElementById('bgrmHint').textContent = '✏️ 在物体周围画一个圈，松开后自动吸附到线条';
   } else {
     document.getElementById('bgrmHint').textContent = '👆 点击图片的背景颜色，可多点几处';
   }
   rebuildBgrm();
   redrawBgrmPreview();
   updateBgrmButtons();
+}
+
+// ---- 画圈吸附: draw a loop around the object, it shrinks inward to the edges ----
+function pointInPolygon(x, y, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i].x, yi = poly[i].y, xj = poly[j].x, yj = poly[j].y;
+    if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) inside = !inside;
+  }
+  return inside;
+}
+
+function shrinkToEdges(mask, edge, w, h, edgeT) {
+  // remove the mask's outer layers inward, stopping at strong edges
+  const remove = new Uint8Array(w * h);
+  const queue = [];
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x;
+    if (!mask[i]) continue;
+    const outside = (x > 0 && !mask[i - 1]) || (x < w - 1 && !mask[i + 1]) || (y > 0 && !mask[i - w]) || (y < h - 1 && !mask[i + w]);
+    if (outside && edge[i] < edgeT) { remove[i] = 1; queue.push(i); }
+  }
+  while (queue.length) {
+    const p = queue.pop();
+    const px = p % w, py = (p / w) | 0;
+    if (px > 0)     { const q = p - 1;     if (mask[q] && !remove[q] && edge[q] < edgeT) { remove[q] = 1; queue.push(q); } }
+    if (px < w - 1) { const q = p + 1;     if (mask[q] && !remove[q] && edge[q] < edgeT) { remove[q] = 1; queue.push(q); } }
+    if (py > 0)     { const q = p - w;     if (mask[q] && !remove[q] && edge[q] < edgeT) { remove[q] = 1; queue.push(q); } }
+    if (py < h - 1) { const q = p + w;     if (mask[q] && !remove[q] && edge[q] < edgeT) { remove[q] = 1; queue.push(q); } }
+  }
+  return remove;
+}
+
+function runLoopShrink() {
+  const st = bgrmState;
+  if (!st.loop || st.loop.length < 3) {
+    showToast('⚠️ 请先在物体周围画一个圈');
+    return;
+  }
+  const w = st.w, h = st.h;
+  const mask = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    if (pointInPolygon(x, y, st.loop)) mask[y * w + x] = 1;
+  }
+  st.loopMask = mask;
+  const remove = shrinkToEdges(mask, st.edge, w, h, bgrmEdgeThreshold());
+  st.removed.fill(0);
+  for (let i = 0; i < w * h; i++) if (!mask[i] || remove[i]) st.removed[i] = 1;
+  rebuildBgrm();
+  redrawBgrmPreview();
+  updateBgrmButtons();
+  document.getElementById('bgrmHint').textContent = '✅ 已吸附，可重画或调容差，圈外背景已删';
 }
 
 function rebuildBgrm() {
@@ -2855,6 +2899,24 @@ function redrawBgrmPreview() {
   // checkerboard background, then the processed image (same region, so transparency shows)
   ctx.drawImage(st.bgCanvas, px, py, visW, visH, 0, 0, st.w, st.h);
   ctx.drawImage(st.work || st.imgCanvas, px, py, visW, visH, 0, 0, st.w, st.h);
+  // draw the drawn loop (image coords -> canvas coords)
+  if (st.loop && st.loop.length > 1) {
+    ctx.strokeStyle = 'rgba(255,80,80,0.95)';
+    ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo((st.loop[0].x - px) * z, (st.loop[0].y - py) * z);
+    for (let i = 1; i < st.loop.length; i++) ctx.lineTo((st.loop[i].x - px) * z, (st.loop[i].y - py) * z);
+    ctx.closePath();
+    ctx.stroke();
+  }
+}
+
+function addLoopPoint(p) {
+  const st = bgrmState;
+  const pts = st.loop;
+  if (pts.length && Math.abs(pts[pts.length - 1].x - p.x) < 2 && Math.abs(pts[pts.length - 1].y - p.y) < 2) return;
+  pts.push(p);
+  redrawBgrmPreview();
 }
 
 function bgrmPointerDown(e) {
@@ -2866,6 +2928,14 @@ function bgrmPointerDown(e) {
     moved: false,
   };
   try { document.getElementById('bgrmCanvas').setPointerCapture(e.pointerId); } catch (err) {}
+  if (bgrmState.mode === 'loop') {
+    // start drawing a new loop
+    bgrmState.loop = [];
+    bgrmState.loopMask = null;
+    bgrmState.removed.fill(0);
+    rebuildBgrm();
+    addLoopPoint(bgrmTapPos(e));
+  }
 }
 
 function bgrmPointerMove(e) {
@@ -2874,7 +2944,11 @@ function bgrmPointerMove(e) {
   e.preventDefault();
   const dx = e.clientX - st.pointer.sx;
   const dy = e.clientY - st.pointer.sy;
-  if (Math.abs(dx) > 4 || Math.abs(dy) > 4) st.pointer.moved = true;
+  if (Math.abs(dx) > 2 || Math.abs(dy) > 2) st.pointer.moved = true;
+  if (st.mode === 'loop') {
+    addLoopPoint(bgrmTapPos(e)); // keep drawing the loop
+    return;
+  }
   if (st.zoom > 1) {
     const rect = document.getElementById('bgrmCanvas').getBoundingClientRect();
     const imgPerPx = st.w / (st.zoom * rect.width); // image px per screen px
@@ -2890,6 +2964,11 @@ function bgrmPointerUp(e) {
   if (!st || !st.pointer) return;
   const moved = st.pointer.moved;
   st.pointer = null;
+  if (st.mode === 'loop') {
+    if (moved && st.loop && st.loop.length >= 3) runLoopShrink();
+    else if (st.loop && st.loop.length < 3) showToast('⚠️ 请画一个圈住物体的封闭线条');
+    return;
+  }
   if (moved) return; // it was a pan, not a tap
   // a tap → pick the background at that spot
   const { x, y } = bgrmTapPos(e);
@@ -2899,7 +2978,7 @@ function bgrmPointerUp(e) {
   redrawBgrmPreview();
   document.getElementById('bgrmHint').textContent = st.zoom > 1
     ? '放大中：拖动画布查看 · 点击背景'
-    : (st.mode === 'line' ? '已吸附到线条，可继续点背景提示 · 调容差可重新吸附' : '继续点击可删除更多 · 调容差可重新抠');
+    : '继续点击可删除更多 · 调容差可重新抠';
   updateBgrmButtons();
 }
 
@@ -2917,15 +2996,27 @@ function bgrmZoom(factor) {
   st.panY = cy - st.h / newZ / 2;
   clampBgrmPan(st);
   document.getElementById('bgrmZoomVal').textContent = newZ + '×';
-  document.getElementById('bgrmHint').textContent = newZ > 1
-    ? '放大中：拖动画布查看 · 点击背景'
-    : '👆 点击图片的背景颜色，可多点几处';
+  document.getElementById('bgrmHint').textContent = st.mode === 'loop'
+    ? (newZ > 1 ? '放大中：画圈会自动吸附 · 松开出结果' : '✏️ 在物体周围画一个圈，松开后自动吸附')
+    : (newZ > 1 ? '放大中：拖动画布查看 · 点击背景' : '👆 点击图片的背景颜色，可多点几处');
   redrawBgrmPreview();
 }
 
 function undoBgrm() {
   const st = bgrmState;
-  if (!st || !st.seeds.length) return;
+  if (!st) return;
+  if (st.mode === 'loop') {
+    // clear the drawn loop and removal (back to original)
+    st.loop = [];
+    st.loopMask = null;
+    st.removed.fill(0);
+    rebuildBgrm();
+    redrawBgrmPreview();
+    updateBgrmButtons();
+    document.getElementById('bgrmHint').textContent = '✏️ 在物体周围画一个圈，松开后自动吸附';
+    return;
+  }
+  if (!st.seeds.length) return;
   st.seeds.pop();
   runAllBgrmSeeds();
   updateBgrmButtons();
@@ -2945,6 +3036,10 @@ function onBgrmTolChange() {
   const el = document.getElementById('bgrmTolerance');
   document.getElementById('bgrmTolVal').textContent = el.value;
   if (!bgrmState) return;
+  if (bgrmState.mode === 'loop') {
+    if (bgrmState.loop && bgrmState.loop.length >= 3) runLoopShrink(); // re-shrink with new precision
+    return;
+  }
   runAllBgrmSeeds();
 }
 
