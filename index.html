@@ -49,13 +49,18 @@ body {
   display: flex; flex-direction: column;
   overflow-y: auto; flex-shrink: 0;
 }
-.sidebar-section { padding: 12px; }
+.sidebar-section {
+  padding: 12px;
+  display: flex; flex-direction: column;
+  flex: 1; min-height: 0;
+}
 .sidebar-title {
   font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
-  color: #64748b; margin-bottom: 8px;
+  color: #64748b; margin-bottom: 8px; flex-shrink: 0;
 }
 .emoji-grid {
   display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px;
+  flex: 1; min-height: 0; overflow-y: auto; align-content: start;
 }
 .emoji-btn {
   aspect-ratio: 1; font-size: 24px; cursor: pointer;
@@ -74,7 +79,7 @@ body {
   margin-top: 8px;
 }
 .upload-sticker-btn:hover { border-color: #14b8a6; color: #1f2937; }
-.upload-split { display: flex; gap: 6px; margin-top: 8px; }
+.upload-split { display: flex; gap: 6px; margin-top: auto; flex-shrink: 0; }
 .upload-split .upload-sticker-btn { margin-top: 0; flex: 1; }
 
 /* ==================== Center - Canvas ==================== */
@@ -247,7 +252,7 @@ canvas {
 
   /* Canvas first on mobile */
   .canvas-container { order: 1; flex: 1 1 0; min-height: 260px; }
-  .sidebar { order: 2; width: 100%; min-width: 0; max-height: 96px; overflow-y: auto; }
+  .sidebar { order: 2; width: 100%; min-width: 0; height: 28vh; overflow: hidden; }
   .properties { order: 3; width: 100%; min-width: 0; max-height: 175px; padding: 8px; }
   canvas { max-width: 100%; max-height: 100%; }
 
@@ -340,11 +345,6 @@ canvas {
     <div id="layerPanel" style="display:none;">
       <div class="prop-group-title" style="padding:8px 4px 4px;">📑 图层</div>
       <div id="layerList" style="display:flex;flex-direction:column;gap:3px;max-height:200px;overflow-y:auto;"></div>
-    </div>
-
-    <div class="placeholder-text" id="noSelectionHint">
-      👆 选择左侧贴图添加到画布<br><br>
-      或上传一张底图开始
     </div>
 
     <div id="stickerProps" style="display:none;">
@@ -852,7 +852,6 @@ async function addImageSticker(img) {
 function selectSticker(id) {
   if (cutState.active) cancelCutMode();
   selectedId = id;
-  document.getElementById('noSelectionHint').style.display = 'none';
   document.getElementById('stickerProps').style.display = '';
   document.getElementById('btnBlend').disabled = !bgImage;
 
@@ -875,7 +874,6 @@ function selectSticker(id) {
 function deselectAll() {
   if (cutState.active) cancelCutMode();
   selectedId = null;
-  document.getElementById('noSelectionHint').style.display = '';
   document.getElementById('stickerProps').style.display = 'none';
   render();
 }
@@ -3224,7 +3222,6 @@ function resetAll() {
   userStyleOverride = null;
   initCanvas();
   document.getElementById('dropZone').style.display = '';
-  document.getElementById('noSelectionHint').style.display = '';
   document.getElementById('stickerProps').style.display = 'none';
   document.getElementById('btnBlend').disabled = true;
   const styleSelect = document.getElementById('propStyle');
@@ -3354,7 +3351,6 @@ function restoreStickersAndFinish(state) {
   // Update UI
   if (selectedId) {
     const st = stickers.find(s => s.id === selectedId);
-    document.getElementById('noSelectionHint').style.display = 'none';
     document.getElementById('stickerProps').style.display = '';
     document.getElementById('btnBlend').disabled = !bgImage;
     if (st) {
@@ -3368,7 +3364,6 @@ function restoreStickersAndFinish(state) {
       updateFlipButtons(st);
     }
   } else {
-    document.getElementById('noSelectionHint').style.display = '';
     document.getElementById('stickerProps').style.display = 'none';
   }
   render();
