@@ -206,6 +206,9 @@ canvas {
 .bgrm-zoom-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
 .bgrm-zoom-row button { flex: 1; min-height: 40px; padding: 6px; }
 .bgrm-zoom-row #bgrmZoomVal { font-size: 13px; font-weight: 700; min-width: 34px; text-align: center; }
+.bgrm-mode-row { display: flex; gap: 8px; margin-bottom: 10px; }
+.bgrm-mode-row button { flex: 1; min-height: 40px; }
+.bgrm-mode-row button.active { background: #14b8a6; color: #fff; border-color: #14b8a6; }
 .bgrm-hint {
   position: absolute; bottom: 6px; left: 0; right: 0; text-align: center;
   font-size: 11px; color: #475569; background: rgba(255,255,255,0.85); padding: 3px;
@@ -420,7 +423,11 @@ canvas {
 <!-- Background removal modal -->
 <div class="modal-mask" id="bgrmModal" style="display:none;">
   <div class="modal-box">
-    <div class="modal-title">✨ 去背景（点一下背景颜色）</div>
+    <div class="modal-title">✨ 去背景</div>
+    <div class="bgrm-mode-row">
+      <button class="btn-outline" id="btnBgrmLine" onclick="setBgrmMode('line')">✏️ 吸附线条</button>
+      <button class="btn-outline" id="btnBgrmColor" onclick="setBgrmMode('color')">🎨 颜色</button>
+    </div>
     <div class="bgrm-preview" id="bgrmPreviewWrap">
       <canvas id="bgrmCanvas"></canvas>
       <div class="bgrm-hint" id="bgrmHint">👆 点击图片的背景颜色，可多点几处</div>
@@ -2676,6 +2683,9 @@ function openBgrm() {
     work: null,
     removed: new Uint8Array(w * h),
     seeds: [],
+    autoSeeds: [],
+    edge: null,
+    mode: 'line',
     cropUrl: null,
     cropSize: null,
     bgCanvas: bgCanvas,
@@ -2686,7 +2696,12 @@ function openBgrm() {
   };
   document.getElementById('bgrmModal').style.display = 'flex';
   document.getElementById('bgrmZoomVal').textContent = '1×';
-  document.getElementById('bgrmHint').textContent = '👆 点击图片的背景颜色，可多点几处';
+  document.getElementById('btnBgrmLine').classList.add('active');
+  document.getElementById('btnBgrmColor').classList.remove('active');
+  document.getElementById('bgrmHint').textContent = '✏️ 已自动吸附线条，不准就点背景提示，或调容差';
+  bgrmState.edge = buildBgrmEdgeMap();
+  autoSnapBgrm();
+  rebuildBgrm();
   updateBgrmButtons();
   redrawBgrmPreview();
 }
@@ -2715,22 +2730,94 @@ function bgrmColorClose(idx, r, g, b, tol) {
   return dr * dr + dg * dg + db * db <= tol * tol;
 }
 
-function floodRemoveBg(seedX, seedY, tol) {
+function bgrmEdgeThreshold() {
+  // higher 容差 → lower threshold → snaps to finer/weaker lines
+  // default (40) → 380: ignores faint impurity edges, snaps to the object's real outline
+  const tol = parseInt(document.getElementById('bgrmTolerance').value, 10);
+  return Math.max(0, 460 - tol * 2);
+}
+
+// 吸附线条 mode: flood stops at strong edges, so the boundary snaps to the
+// object's outline and the region inside it (the sticker) is never removed.
+// 颜色 mode: flood stops at colour difference from the tapped seed (magic wand).
+function floodRemoveBg(seedX, seedY) {
   const st = bgrmState;
   const data = st.imgData.data;
   const w = st.w, h = st.h;
-  const si = (seedY * w + seedX) * 4;
-  const sr = data[si], sg = data[si + 1], sb = data[si + 2];
-  const stack = [seedY * w + seedX];
-  st.removed[seedY * w + seedX] = 1;
+  const start = seedY * w + seedX;
+  if (st.removed[start]) return;
+  const isLine = st.mode === 'line';
+  const tol = parseInt(document.getElementById('bgrmTolerance').value, 10);
+  const edgeT = isLine ? bgrmEdgeThreshold() : 0;
+  if (isLine && (data[start * 4 + 3] < 8 || st.edge[start] >= edgeT)) return; // seed is edge/transparent (object) — don't remove
+  const sr = data[start * 4], sg = data[start * 4 + 1], sb = data[start * 4 + 2];
+  const stack = [start];
+  st.removed[start] = 1;
+  const edge = st.edge;
   while (stack.length) {
     const p = stack.pop();
     const px = p % w, py = (p / w) | 0;
-    if (px > 0)     { const q = p - 1;     if (!st.removed[q] && bgrmColorClose(q * 4, sr, sg, sb, tol)) { st.removed[q] = 1; stack.push(q); } }
-    if (px < w - 1) { const q = p + 1;     if (!st.removed[q] && bgrmColorClose(q * 4, sr, sg, sb, tol)) { st.removed[q] = 1; stack.push(q); } }
-    if (py > 0)     { const q = p - w;     if (!st.removed[q] && bgrmColorClose(q * 4, sr, sg, sb, tol)) { st.removed[q] = 1; stack.push(q); } }
-    if (py < h - 1) { const q = p + w;     if (!st.removed[q] && bgrmColorClose(q * 4, sr, sg, sb, tol)) { st.removed[q] = 1; stack.push(q); } }
+    if (px > 0)     { const q = p - 1;     if (!st.removed[q] && (isLine ? (data[q * 4 + 3] >= 8 && edge[q] < edgeT) : bgrmColorClose(q * 4, sr, sg, sb, tol))) { st.removed[q] = 1; stack.push(q); } }
+    if (px < w - 1) { const q = p + 1;     if (!st.removed[q] && (isLine ? (data[q * 4 + 3] >= 8 && edge[q] < edgeT) : bgrmColorClose(q * 4, sr, sg, sb, tol))) { st.removed[q] = 1; stack.push(q); } }
+    if (py > 0)     { const q = p - w;     if (!st.removed[q] && (isLine ? (data[q * 4 + 3] >= 8 && edge[q] < edgeT) : bgrmColorClose(q * 4, sr, sg, sb, tol))) { st.removed[q] = 1; stack.push(q); } }
+    if (py < h - 1) { const q = p + w;     if (!st.removed[q] && (isLine ? (data[q * 4 + 3] >= 8 && edge[q] < edgeT) : bgrmColorClose(q * 4, sr, sg, sb, tol))) { st.removed[q] = 1; stack.push(q); } }
   }
+}
+
+function buildBgrmEdgeMap() {
+  const st = bgrmState;
+  const d = st.imgData.data;
+  const w = st.w, h = st.h;
+  const lum = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) lum[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
+  const edge = new Float32Array(w * h);
+  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+    const p = y * w + x;
+    const gx = (lum[p - w - 1] + 2 * lum[p - 1] + lum[p + w - 1]) - (lum[p - w + 1] + 2 * lum[p + 1] + lum[p + w + 1]);
+    const gy = (lum[p - w - 1] + 2 * lum[p - w] + lum[p - w + 1]) - (lum[p + w - 1] + 2 * lum[p + w] + lum[p + w + 1]);
+    edge[p] = Math.abs(gx) + Math.abs(gy);
+  }
+  return edge;
+}
+
+// 吸附线条 mode: auto-flood from the four corners (usually background), snapping
+// to the object's edges. Manual taps add more seeds.
+function autoSnapBgrm() {
+  const st = bgrmState;
+  st.autoSeeds = [
+    { x: 0, y: 0 }, { x: st.w - 1, y: 0 },
+    { x: 0, y: st.h - 1 }, { x: st.w - 1, y: st.h - 1 },
+  ];
+  for (const s of st.autoSeeds) floodRemoveBg(s.x, s.y);
+}
+
+function runAllBgrmSeeds() {
+  const st = bgrmState;
+  if (!st) return;
+  st.removed.fill(0);
+  for (const s of st.autoSeeds) floodRemoveBg(s.x, s.y);
+  for (const s of st.seeds) floodRemoveBg(s.x, s.y);
+  rebuildBgrm();
+  redrawBgrmPreview();
+}
+
+function setBgrmMode(mode) {
+  if (!bgrmState) return;
+  bgrmState.mode = mode;
+  document.getElementById('btnBgrmLine').classList.toggle('active', mode === 'line');
+  document.getElementById('btnBgrmColor').classList.toggle('active', mode === 'color');
+  bgrmState.removed.fill(0);
+  bgrmState.seeds = [];
+  bgrmState.autoSeeds = [];
+  if (mode === 'line') {
+    autoSnapBgrm();
+    document.getElementById('bgrmHint').textContent = '✏️ 已自动吸附线条，不准就点背景提示，或调容差';
+  } else {
+    document.getElementById('bgrmHint').textContent = '👆 点击图片的背景颜色，可多点几处';
+  }
+  rebuildBgrm();
+  redrawBgrmPreview();
+  updateBgrmButtons();
 }
 
 function rebuildBgrm() {
@@ -2804,16 +2891,15 @@ function bgrmPointerUp(e) {
   const moved = st.pointer.moved;
   st.pointer = null;
   if (moved) return; // it was a pan, not a tap
-  // a tap → pick the background colour at that spot
+  // a tap → pick the background at that spot
   const { x, y } = bgrmTapPos(e);
-  const tol = parseInt(document.getElementById('bgrmTolerance').value, 10);
   st.seeds.push({ x: x, y: y });
-  floodRemoveBg(x, y, tol);
+  floodRemoveBg(x, y);
   rebuildBgrm();
   redrawBgrmPreview();
   document.getElementById('bgrmHint').textContent = st.zoom > 1
     ? '放大中：拖动画布查看 · 点击背景'
-    : '继续点击可删除更多 · 调容差可重新抠';
+    : (st.mode === 'line' ? '已吸附到线条，可继续点背景提示 · 调容差可重新吸附' : '继续点击可删除更多 · 调容差可重新抠');
   updateBgrmButtons();
 }
 
@@ -2841,16 +2927,12 @@ function undoBgrm() {
   const st = bgrmState;
   if (!st || !st.seeds.length) return;
   st.seeds.pop();
-  st.removed.fill(0);
-  const tol = parseInt(document.getElementById('bgrmTolerance').value, 10);
-  for (const s of st.seeds) floodRemoveBg(s.x, s.y, tol);
-  rebuildBgrm();
-  redrawBgrmPreview();
+  runAllBgrmSeeds();
   updateBgrmButtons();
 }
 
 function updateBgrmButtons() {
-  const has = bgrmState && bgrmState.seeds.length > 0;
+  const has = bgrmState && bgrmState.removed.some(v => v === 1);
   const u = document.getElementById('btnBgrmUndo');
   const a = document.getElementById('btnBgrmApply');
   const s = document.getElementById('btnBgrmSave');
@@ -2863,12 +2945,7 @@ function onBgrmTolChange() {
   const el = document.getElementById('bgrmTolerance');
   document.getElementById('bgrmTolVal').textContent = el.value;
   if (!bgrmState) return;
-  const st = bgrmState;
-  st.removed.fill(0);
-  const tol = parseInt(el.value, 10);
-  for (const s of st.seeds) floodRemoveBg(s.x, s.y, tol);
-  rebuildBgrm();
-  redrawBgrmPreview();
+  runAllBgrmSeeds();
 }
 
 function getBgrmCropUrl() {
@@ -2910,8 +2987,8 @@ function applyBgrm() {
     sticker.adjustments = null;
     sticker.shadowEnabled = false;
     sticker.shadowCanvas = null;
-    closeBgrm();
     render();
+    document.getElementById('bgrmHint').textContent = '✅ 已应用，可继续存贴图库或点取消';
     showToast('✅ 已去背景');
   };
   img.src = url;
