@@ -2306,13 +2306,31 @@ if ('ResizeObserver' in window) {
 
 // ==================== MOBILE SLIDER FIX ====================
 // Keep native slider behaviour (so the panel can still scroll), but on touch
-// devices limit how far a single tap can move the value: every change is
-// clamped to +/-12% of the full range around the last value. A stray tap can
-// only nudge a little (scale at 10% can't jump to 200%), while real drags
-// still reach anywhere by advancing step by step. Desktop mouse unchanged.
+// devices a tap (or a vertical scroll gesture) is detected and its value
+// change is reverted - only a real horizontal drag adjusts the slider. Every
+// change is additionally clamped to +/-12% of the full range so nothing can
+// ever jump far. Desktop mouse unchanged.
 function setupWindowedSliders() {
   if (!window.matchMedia || !window.matchMedia('(pointer: coarse)').matches) return;
-  document.querySelectorAll('input[type="range"]').forEach(function(slider) {
+  const sliders = document.querySelectorAll('input[type="range"]');
+  let active = null; // current touch: { slider, startX, startY, startValue }
+
+  document.addEventListener('pointerup', function(e) {
+    if (!active) return;
+    const dx = e.clientX - active.startX;
+    const dy = e.clientY - active.startY;
+    // a tap or a mostly-vertical gesture (scrolling): undo any value change
+    if (Math.abs(dx) < 6 || Math.abs(dx) < Math.abs(dy)) {
+      if (parseFloat(active.slider.value) !== active.startValue) {
+        active.slider.value = active.startValue;
+        active.slider.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    }
+    active = null;
+  });
+  document.addEventListener('pointercancel', function() { active = null; });
+
+  sliders.forEach(function(slider) {
     const logicalMin = parseFloat(slider.min);
     const logicalMax = parseFloat(slider.max);
     const range = logicalMax - logicalMin;
@@ -2320,14 +2338,13 @@ function setupWindowedSliders() {
     slider.dataset.half = half;
     slider.dataset.anchor = slider.value;
 
-    // When a touch starts, anchor the allowed range to the current value.
-    slider.addEventListener('pointerdown', function() {
+    slider.addEventListener('pointerdown', function(e) {
+      active = { slider: slider, startX: e.clientX, startY: e.clientY, startValue: parseFloat(slider.value) };
       slider.dataset.anchor = slider.value;
     });
 
     // Clamp every change to within +/-half of the anchor value, then let the
-    // anchor follow. A stray tap can only nudge the value a little; a real
-    // drag still reaches anywhere by advancing step by step.
+    // anchor follow. Protects against fast drags and any missed tap.
     slider.addEventListener('input', function() {
       const h = parseFloat(slider.dataset.half);
       const anchor = parseFloat(slider.dataset.anchor);
