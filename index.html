@@ -474,7 +474,7 @@ function renderCustomStickerGrid() {
   const grid = document.getElementById('custom-stickers-grid');
   if (!grid) return;
   if (customStickers.length === 0) {
-    grid.innerHTML = '<div style="color:#555;font-size:12px;text-align:center;padding:12px;">暂无贴图<br>点击下方按钮上传</div>';
+    grid.innerHTML = '<div style="grid-column:1/-1;color:#555;font-size:12px;text-align:center;padding:12px;">暂无贴图<br>点击下方按钮上传</div>';
     return;
   }
   grid.innerHTML = customStickers.map((s, idx) => `
