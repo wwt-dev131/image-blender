@@ -10,7 +10,7 @@
 html, body { height: 100%; overflow: hidden; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: #1a1a2e; color: #e0e0e0;
+  background: #f4f6f9; color: #1f2937;
   display: flex; flex-direction: column;
   user-select: none; -webkit-user-select: none;
 }
@@ -18,24 +18,24 @@ body {
 /* ==================== Header ==================== */
 .header {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 8px 16px; background: #16162b;
-  border-bottom: 1px solid #2a2a4a; flex-shrink: 0;
+  padding: 8px 16px; background: #ffffff;
+  border-bottom: 1px solid #e5e7eb; flex-shrink: 0;
   min-height: 48px;
 }
 .header .logo { font-size: 18px; font-weight: 700; letter-spacing: 0.5px; }
-.header .logo span { color: #7c8cf8; }
+.header .logo span { color: #14b8a6; }
 .header .actions { display: flex; gap: 8px; }
 .header button {
   padding: 7px 16px; border: none; border-radius: 6px;
   font-size: 13px; cursor: pointer; font-weight: 600;
   transition: all 0.15s;
 }
-.btn-primary { background: #7c8cf8; color: #fff; }
-.btn-primary:hover { background: #6b7de8; }
-.btn-outline { background: transparent; color: #ccc; border: 1px solid #444 !important; }
-.btn-outline:hover { background: #2a2a4a; }
-.btn-danger { background: #e0556a; color: #fff; }
-.btn-danger:hover { background: #c94a5e; }
+.btn-primary { background: #14b8a6; color: #fff; }
+.btn-primary:hover { background: #0d9488; }
+.btn-outline { background: transparent; color: #1f2937; border: 1px solid #cbd5e1 !important; }
+.btn-outline:hover { background: #e5e7eb; }
+.btn-danger { background: #ef4444; color: #fff; }
+.btn-danger:hover { background: #dc2626; }
 
 /* ==================== Main Layout ==================== */
 .main {
@@ -44,53 +44,53 @@ body {
 
 /* ==================== Left Panel - Sticker Library ==================== */
 .sidebar {
-  width: 240px; min-width: 240px; background: #1e1e36;
-  border-right: 1px solid #2a2a4a;
+  width: 240px; min-width: 240px; background: #ffffff;
+  border-right: 1px solid #e5e7eb;
   display: flex; flex-direction: column;
   overflow-y: auto; flex-shrink: 0;
 }
 .sidebar-section { padding: 12px; }
 .sidebar-title {
   font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
-  color: #888; margin-bottom: 8px;
+  color: #64748b; margin-bottom: 8px;
 }
 .emoji-grid {
   display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px;
 }
 .emoji-btn {
   aspect-ratio: 1; font-size: 24px; cursor: pointer;
-  background: #252540; border: 1px solid transparent;
+  background: #f1f5f9; border: 1px solid transparent;
   border-radius: 8px; display: flex; align-items: center;
   justify-content: center; transition: all 0.15s;
 }
-.emoji-btn:hover { background: #303058; border-color: #7c8cf8; transform: scale(1.08); }
+.emoji-btn:hover { background: #e2e8f0; border-color: #14b8a6; transform: scale(1.08); }
 .emoji-btn:active { transform: scale(0.95); }
 
 .upload-sticker-btn {
-  width: 100%; padding: 10px; background: #252540;
-  border: 1px dashed #444; border-radius: 8px;
-  color: #aaa; cursor: pointer; font-size: 12px;
+  width: 100%; padding: 10px; background: #f1f5f9;
+  border: 1px dashed #cbd5e1; border-radius: 8px;
+  color: #64748b; cursor: pointer; font-size: 12px;
   text-align: center; transition: all 0.15s;
   margin-top: 8px;
 }
-.upload-sticker-btn:hover { border-color: #7c8cf8; color: #ccc; }
+.upload-sticker-btn:hover { border-color: #14b8a6; color: #1f2937; }
 
 /* ==================== Center - Canvas ==================== */
 .canvas-container {
   flex: 1; display: flex; align-items: center; justify-content: center;
-  background: #12121f;
+  background: #e2e8f0;
   background-image:
-    linear-gradient(45deg, #1a1a30 25%, transparent 25%),
-    linear-gradient(-45deg, #1a1a30 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, #1a1a30 75%),
-    linear-gradient(-45deg, transparent 75%, #1a1a30 75%);
+    linear-gradient(45deg, #d8e0e8 25%, transparent 25%),
+    linear-gradient(-45deg, #d8e0e8 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #d8e0e8 75%),
+    linear-gradient(-45deg, transparent 75%, #d8e0e8 75%);
   background-size: 20px 20px;
   background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
   position: relative; overflow: hidden;
 }
 .canvas-wrapper {
   position: relative;
-  box-shadow: 0 0 40px rgba(0,0,0,0.5);
+  box-shadow: 0 0 40px rgba(0,0,0,0.15);
 }
 canvas {
   display: block;
@@ -104,72 +104,72 @@ canvas {
   pointer-events: none;
 }
 .drop-zone-text {
-  font-size: 16px; color: #666; text-align: center; line-height: 1.8;
+  font-size: 16px; color: #94a3b8; text-align: center; line-height: 1.8;
 }
 .drop-zone-text .icon { font-size: 48px; display: block; margin-bottom: 8px; }
 
 /* ==================== Right Panel - Properties ==================== */
 .properties {
-  width: 260px; min-width: 260px; background: #1e1e36;
-  border-left: 1px solid #2a2a4a;
+  width: 260px; min-width: 260px; background: #ffffff;
+  border-left: 1px solid #e5e7eb;
   display: flex; flex-direction: column;
   overflow-y: auto; flex-shrink: 0; padding: 12px;
 }
 .prop-group {
-  background: #252540; border-radius: 8px; padding: 12px;
+  background: #f1f5f9; border-radius: 8px; padding: 12px;
   margin-bottom: 10px;
 }
 .prop-group-title {
   font-size: 11px; text-transform: uppercase;
-  letter-spacing: 1px; color: #888; margin-bottom: 10px;
+  letter-spacing: 1px; color: #64748b; margin-bottom: 10px;
 }
 .prop-row { display: flex; align-items: center; margin-bottom: 8px; }
 .prop-row:last-child { margin-bottom: 0; }
-.prop-label { font-size: 12px; width: 60px; flex-shrink: 0; color: #aaa; }
-.prop-row input[type="range"] { flex: 1; accent-color: #7c8cf8; height: 4px; }
-.prop-value { font-size: 11px; width: 36px; text-align: right; color: #888; flex-shrink: 0; }
-.prop-row input[type="checkbox"] { accent-color: #7c8cf8; }
+.prop-label { font-size: 12px; width: 60px; flex-shrink: 0; color: #64748b; }
+.prop-row input[type="range"] { flex: 1; accent-color: #14b8a6; height: 4px; }
+.prop-value { font-size: 11px; width: 36px; text-align: right; color: #64748b; flex-shrink: 0; }
+.prop-row input[type="checkbox"] { accent-color: #14b8a6; }
 
 /* Layer panel */
 .layer-item {
   display:flex; align-items:center; gap:8px; padding:5px 8px;
-  background:#1e1e36; border:1px solid transparent; border-radius:6px;
+  background:#ffffff; border:1px solid transparent; border-radius:6px;
   cursor:pointer; transition:all 0.12s; font-size:11px;
 }
-.layer-item:hover { background:#2a2a4a; }
-.layer-item.selected { border-color:#7c8cf8; background:#252550; }
-.layer-item.drag-over { border-color:#a78bfa; border-style:dashed; }
+.layer-item:hover { background:#e5e7eb; }
+.layer-item.selected { border-color:#14b8a6; background:#ecfdf5; }
+.layer-item.drag-over { border-color:#2dd4bf; border-style:dashed; }
 .layer-thumb {
   width:36px; height:36px; border-radius:4px; object-fit:contain;
-  background:#12121f; flex-shrink:0;
+  background:#e2e8f0; flex-shrink:0;
 }
 .layer-info { flex:1; min-width:0; overflow:hidden; }
-.layer-name { color:#ccc; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.layer-detail { color:#777; font-size:10px; }
+.layer-name { color:#1f2937; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.layer-detail { color:#64748b; font-size:10px; }
 .layer-actions { display:flex; gap:2px; flex-shrink:0; }
 .layer-btn {
-  background:none; border:none; color:#888; cursor:pointer; font-size:10px;
+  background:none; border:none; color:#64748b; cursor:pointer; font-size:10px;
   padding:2px 4px; border-radius:3px;
 }
-.layer-btn:hover { background:#3a3a5a; color:#ccc; }
+.layer-btn:hover { background:#e2e8f0; color:#1f2937; }
 
 .btn-blend {
-  width: 100%; padding: 10px; background: linear-gradient(135deg, #7c8cf8, #a78bfa);
+  width: 100%; padding: 10px; background: linear-gradient(135deg, #14b8a6, #2dd4bf);
   border: none; border-radius: 8px; color: #fff; font-size: 14px;
   font-weight: 700; cursor: pointer; transition: all 0.2s;
 }
-.btn-blend:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(124,140,248,0.3); }
+.btn-blend:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(20,184,166,0.3); }
 .btn-blend:active { transform: translateY(0); }
 .btn-blend:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
 
 .placeholder-text {
-  color: #555; font-size: 13px; text-align: center; padding: 40px 0;
+  color: #94a3b8; font-size: 13px; text-align: center; padding: 40px 0;
 }
 
 /* Toast */
 .toast {
   position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
-  background: #333; color: #fff; padding: 10px 24px; border-radius: 20px;
+  background: #1f2937; color: #fff; padding: 10px 24px; border-radius: 20px;
   font-size: 13px; z-index: 999; pointer-events: none;
   opacity: 0; transition: opacity 0.3s;
 }
@@ -178,13 +178,13 @@ canvas {
 /* ==================== Line-cut toolbar ==================== */
 .cut-bar {
   position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
-  background: rgba(18,18,36,0.95); border: 1px solid #3a3a5a; border-radius: 10px;
+  background: rgba(255,255,255,0.96); border: 1px solid #e2e8f0; border-radius: 10px;
   padding: 8px 12px; z-index: 5; display: none; gap: 8px; align-items: center; flex-wrap: wrap;
-  box-shadow: 0 4px 16px rgba(0,0,0,.4); max-width: 96%;
+  box-shadow: 0 4px 16px rgba(0,0,0,.12); max-width: 96%;
 }
-.cut-bar #cutStatus { font-size: 12px; color: #ccc; }
+.cut-bar #cutStatus { font-size: 12px; color: #1f2937; }
 .cut-bar button { min-height: 44px; padding: 8px 14px; font-size: 13px; }
-.cut-bar button.brush-on { background: #7c8cf8; color: #fff; border-color: #7c8cf8; }
+.cut-bar button.brush-on { background: #14b8a6; color: #fff; border-color: #14b8a6; }
 
 /* ==================== Custom touch sliders ==================== */
 /* Industry-standard approach: draw our own track/thumb and take over all
@@ -194,9 +194,9 @@ canvas {
 .cs input[type="range"] { opacity: 0; pointer-events: none; width: 100%; display: block; margin: 0; }
 .cs .cs-track,
 .cs .cs-fill { position: absolute; left: 6px; top: 50%; height: 4px; transform: translateY(-50%); border-radius: 2px; pointer-events: none; }
-.cs .cs-track { right: 6px; background: #34345a; }
-.cs .cs-fill { background: linear-gradient(90deg, #7c8cf8, #a78bfa); }
-.cs .cs-thumb { position: absolute; top: 50%; width: 20px; height: 20px; border-radius: 50%; background: #fff; border: 3px solid #7c8cf8; box-shadow: 0 1px 4px rgba(0,0,0,.4); transform: translate(-50%,-50%); pointer-events: none; }
+.cs .cs-track { right: 6px; background: #d3dce6; }
+.cs .cs-fill { background: linear-gradient(90deg, #14b8a6, #2dd4bf); }
+.cs .cs-thumb { position: absolute; top: 50%; width: 20px; height: 20px; border-radius: 50%; background: #fff; border: 3px solid #14b8a6; box-shadow: 0 1px 4px rgba(0,0,0,.12); transform: translate(-50%,-50%); pointer-events: none; }
 
 /* Responsive - tablet & phone */
 @media (max-width: 900px) {
@@ -244,14 +244,14 @@ canvas {
     <button class="btn-outline" id="btnUndo" onclick="undo()" title="撤销 (Ctrl+Z)" disabled>↩</button>
     <button class="btn-outline" id="btnRedo" onclick="redo()" title="重做 (Ctrl+Shift+Z)" disabled>↪</button>
     <button class="btn-outline" onclick="resetAll()" title="清除所有">🔄 重置</button>
-    <select id="exportFormat" onchange="onExportFormatChange()" style="background:#252540;color:#ccc;border:1px solid #444;border-radius:6px;padding:6px 8px;font-size:12px;cursor:pointer;outline:none;">
+    <select id="exportFormat" onchange="onExportFormatChange()" style="background:#f1f5f9;color:#1f2937;border:1px solid #cbd5e1;border-radius:6px;padding:6px 8px;font-size:12px;cursor:pointer;outline:none;">
       <option value="png">PNG</option>
       <option value="jpeg">JPEG</option>
       <option value="webp">WebP</option>
     </select>
     <span id="exportQualityWrap" style="display:none;display:flex;align-items:center;gap:4px;">
-      <input type="range" id="exportQuality" min="10" max="100" value="90" style="width:60px;accent-color:#7c8cf8;" oninput="document.getElementById('exportQualityVal').textContent=this.value+'%'">
-      <span id="exportQualityVal" style="font-size:11px;color:#aaa;min-width:32px;">90%</span>
+      <input type="range" id="exportQuality" min="10" max="100" value="90" style="width:60px;accent-color:#14b8a6;" oninput="document.getElementById('exportQualityVal').textContent=this.value+'%'">
+      <span id="exportQualityVal" style="font-size:11px;color:#64748b;min-width:32px;">90%</span>
     </span>
     <button class="btn-primary" onclick="downloadResult()" title="下载合成图片">⬇ 下载</button>
   </div>
@@ -356,7 +356,7 @@ canvas {
         </div>
         <div class="prop-row" style="margin-top:4px;">
           <span class="prop-label">风格</span>
-          <select id="propStyle" onchange="onStyleChange()" style="flex:1;background:#1e1e36;color:#ccc;border:1px solid #3a3a5a;border-radius:5px;padding:5px 8px;font-size:11px;cursor:pointer;outline:none;">
+          <select id="propStyle" onchange="onStyleChange()" style="flex:1;background:#ffffff;color:#1f2937;border:1px solid #e2e8f0;border-radius:5px;padding:5px 8px;font-size:11px;cursor:pointer;outline:none;">
             <option value="auto">自动检测</option>
             <option value="photo">写实照片</option>
             <option value="anime">二次元/动漫</option>
@@ -364,7 +364,7 @@ canvas {
             <option value="3d">3D渲染</option>
           </select>
         </div>
-        <div class="style-indicator" id="styleIndicator" style="display:none;font-size:11px;color:#7c8cf8;text-align:center;padding:3px 0;"></div>
+        <div class="style-indicator" id="styleIndicator" style="display:none;font-size:11px;color:#14b8a6;text-align:center;padding:3px 0;"></div>
         <button class="btn-blend" id="btnBlend" onclick="autoBlend()" disabled>
           ✨ 贴图融合
         </button>
@@ -534,13 +534,13 @@ function renderCustomStickerGrid() {
   const grid = document.getElementById('custom-stickers-grid');
   if (!grid) return;
   if (customStickers.length === 0) {
-    grid.innerHTML = '<div style="grid-column:1/-1;color:#555;font-size:12px;text-align:center;padding:12px;">暂无贴图<br>点击下方按钮上传</div>';
+    grid.innerHTML = '<div style="grid-column:1/-1;color:#94a3b8;font-size:12px;text-align:center;padding:12px;">暂无贴图<br>点击下方按钮上传</div>';
     return;
   }
   grid.innerHTML = customStickers.map((s, idx) => `
     <div class="emoji-btn" style="position:relative;overflow:hidden;" title="${s.name}" onclick="addCustomStickerById('${s.id}')">
       <img src="${s.thumb || s.dataUrl}" style="width:100%;height:100%;object-fit:contain;" alt="${s.name}">
-      <span style="position:absolute;top:1px;right:2px;font-size:10px;cursor:pointer;opacity:0.6;background:rgba(0,0,0,0.5);border-radius:2px;padding:0 2px;"
+      <span style="position:absolute;top:1px;right:2px;font-size:10px;cursor:pointer;opacity:0.6;background:rgba(0,0,0,0.15);border-radius:2px;padding:0 2px;"
             onclick="event.stopPropagation();deleteCustomSticker('${s.id}')"
             title="删除贴图">✕</span>
     </div>
@@ -604,7 +604,7 @@ function render() {
     ctx.drawImage(bgImage, bgOffsetX, bgOffsetY, canvas.width, canvas.height);
   } else {
     // Draw placeholder
-    ctx.fillStyle = '#1a1a30';
+    ctx.fillStyle = '#d8e0e8';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   }
 
@@ -672,7 +672,7 @@ function drawSticker(sticker) {
 
   // Selection indicator
   if (!cutState.active && sticker.id === selectedId) {
-    ctx.strokeStyle = 'rgba(124,140,248,0.6)';
+    ctx.strokeStyle = 'rgba(20,184,166,0.6)';
     ctx.lineWidth = 2;
     ctx.setLineDash([4, 3]);
     ctx.strokeRect(-w/2 - 2, -h/2 - 2, w + 4, h + 4);
@@ -695,7 +695,7 @@ function drawSelectionHandles(sticker) {
   ];
 
   ctx.fillStyle = '#fff';
-  ctx.strokeStyle = '#7c8cf8';
+  ctx.strokeStyle = '#14b8a6';
   ctx.lineWidth = 2;
   for (const [cx, cy] of corners) {
     ctx.fillRect(cx - HANDLE_RADIUS/2, cy - HANDLE_RADIUS/2, HANDLE_RADIUS, HANDLE_RADIUS);
@@ -707,7 +707,7 @@ function drawSelectionHandles(sticker) {
   ctx.beginPath();
   ctx.moveTo(0, -h/2);
   ctx.lineTo(0, rotHandleY);
-  ctx.strokeStyle = '#7c8cf8';
+  ctx.strokeStyle = '#14b8a6';
   ctx.lineWidth = 1.5;
   ctx.setLineDash([3, 3]);
   ctx.stroke();
@@ -716,7 +716,7 @@ function drawSelectionHandles(sticker) {
   // Rotation circle
   ctx.beginPath();
   ctx.arc(0, rotHandleY, HANDLE_RADIUS/2 + 2, 0, Math.PI * 2);
-  ctx.fillStyle = '#7c8cf8';
+  ctx.fillStyle = '#14b8a6';
   ctx.fill();
   ctx.strokeStyle = '#fff';
   ctx.lineWidth = 2;
@@ -873,8 +873,8 @@ function flipStickerV() {
 function updateFlipButtons(sticker) {
   const btnH = document.getElementById('btnFlipH');
   const btnV = document.getElementById('btnFlipV');
-  if (btnH) btnH.style.background = sticker.flipH ? '#7c8cf8' : '';
-  if (btnV) btnV.style.background = sticker.flipV ? '#7c8cf8' : '';
+  if (btnH) btnH.style.background = sticker.flipH ? '#14b8a6' : '';
+  if (btnV) btnV.style.background = sticker.flipV ? '#14b8a6' : '';
 }
 
 // ==================== LAYER PANEL ====================
