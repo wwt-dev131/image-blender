@@ -2313,43 +2313,33 @@ if ('ResizeObserver' in window) {
 function setupThumbOnlySliders() {
   if (!window.matchMedia || !window.matchMedia('(pointer: coarse)').matches) return;
   const sliders = document.querySelectorAll('input[type="range"]');
-  let active = null; // { slider, startX, startValue, grabbing, width }
+  let active = null; // { slider, startX, startValue, width }
 
-  document.addEventListener('pointerup', function(e) {
-    if (!active) return;
-    const dx = e.clientX - active.startX;
-    // Revert if it was a plain tap, or the touch wasn't on the thumb (track touch).
-    if (!active.grabbing || Math.abs(dx) < 6) {
-      if (parseFloat(active.slider.value) !== active.startValue) {
-        active.slider.value = active.startValue;
-        active.slider.dispatchEvent(new Event('input', { bubbles: true }));
-      }
-    }
-    active = null;
-  });
+  document.addEventListener('pointerup', function() { active = null; });
   document.addEventListener('pointercancel', function() { active = null; });
 
   sliders.forEach(function(slider) {
     const logicalMin = parseFloat(slider.min);
     const logicalMax = parseFloat(slider.max);
     const range = logicalMax - logicalMin;
-    slider.style.touchAction = 'pan-y'; // vertical scroll OK; no native horizontal jump
+    slider.style.touchAction = 'none'; // fully disable the browser's native jump
 
     slider.addEventListener('pointerdown', function(e) {
+      e.preventDefault(); // cancel the native tap-to-jump BEFORE it can happen
       const rect = slider.getBoundingClientRect();
       const v = parseFloat(slider.value);
       const thumbX = rect.left + (v - logicalMin) / range * rect.width;
-      const grabbing = Math.abs(e.clientX - thumbX) <= 28; // near the round thumb?
-      active = { slider: slider, startX: e.clientX, startValue: v, grabbing: grabbing, width: rect.width };
-      if (grabbing) {
+      if (Math.abs(e.clientX - thumbX) <= 28) {
+        // touch is on the round thumb: start a manual drag
+        active = { slider: slider, startX: e.clientX, startValue: v, width: rect.width };
         try { slider.setPointerCapture(e.pointerId); } catch (err) {}
-        e.preventDefault(); // take over horizontal control of the slider
+      } else {
+        active = null; // touching the track: nothing happens at all
       }
-      // else: touching the track does nothing
     });
 
     slider.addEventListener('pointermove', function(e) {
-      if (!active || !active.grabbing || active.slider !== slider) return;
+      if (!active || active.slider !== slider) return;
       const dx = e.clientX - active.startX;
       const delta = (dx / active.width) * range;
       const v = Math.round(Math.min(logicalMax, Math.max(logicalMin, active.startValue + delta)));
