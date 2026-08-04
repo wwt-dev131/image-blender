@@ -186,6 +186,30 @@ canvas {
 .cut-bar button { min-height: 44px; padding: 8px 14px; font-size: 13px; }
 .cut-bar button.brush-on { background: #14b8a6; color: #fff; border-color: #14b8a6; }
 
+/* ==================== Background-removal modal ==================== */
+.modal-mask {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 50;
+  display: flex; align-items: center; justify-content: center; padding: 16px;
+}
+.modal-box {
+  background: #ffffff; border-radius: 14px; padding: 16px;
+  width: 100%; max-width: 420px; max-height: 90vh; overflow-y: auto;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+}
+.modal-title { font-size: 15px; font-weight: 700; margin-bottom: 10px; }
+.bgrm-preview {
+  position: relative; background: #e2e8f0; border-radius: 10px; overflow: hidden;
+}
+.bgrm-preview canvas { display: block; width: 100%; height: auto; cursor: crosshair; touch-action: pan-y; }
+.bgrm-hint {
+  position: absolute; bottom: 6px; left: 0; right: 0; text-align: center;
+  font-size: 11px; color: #475569; background: rgba(255,255,255,0.85); padding: 3px;
+  pointer-events: none;
+}
+.bgrm-row { margin-top: 10px; }
+.modal-actions { display: flex; gap: 8px; margin-top: 12px; }
+.modal-actions button { flex: 1; }
+
 /* ==================== Custom touch sliders ==================== */
 /* Industry-standard approach: draw our own track/thumb and take over all
    touch handling, so the native range input can never jump on tap.
@@ -334,6 +358,7 @@ canvas {
           <button class="btn-outline" style="flex:1;font-size:11px;padding:4px 8px;" onclick="moveStickerUp()">⬆ 上移</button>
           <button class="btn-outline" style="flex:1;font-size:11px;padding:4px 8px;" onclick="moveStickerDown()">⬇ 下移</button>
         </div>
+        <button class="btn-outline" style="width:100%;margin-top:4px;padding:6px;font-size:12px;" onclick="openBgrm()">✨ 去背景</button>
         <button class="btn-outline" style="width:100%;margin-top:4px;padding:6px;font-size:12px;" onclick="enterCutMode()">✂ 线条切割</button>
         <button class="btn-danger" style="width:100%;margin-top:4px;padding:6px;font-size:12px;" onclick="deleteSelectedSticker()">🗑 删除贴图</button>
       </div>
@@ -384,10 +409,31 @@ canvas {
 
 <!-- Bottom bar with quick actions (shown when no bg) -->
 <div id="bottomBar" style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:10;">
-  <button class="btn-primary" style="padding:12px 28px;font-size:15px;border-radius:10px;box-shadow:0 4px 20px rgba(124,140,248,0.4);"
+  <button class="btn-primary" style="padding:12px 28px;font-size:15px;border-radius:10px;box-shadow:0 4px 20px rgba(20,184,166,0.4);"
           onclick="document.getElementById('bgUpload').click()">
     📁 上传底图
   </button>
+</div>
+
+<!-- Background removal modal -->
+<div class="modal-mask" id="bgrmModal" style="display:none;">
+  <div class="modal-box">
+    <div class="modal-title">✨ 去背景（点一下背景颜色）</div>
+    <div class="bgrm-preview" id="bgrmPreviewWrap">
+      <canvas id="bgrmCanvas"></canvas>
+      <div class="bgrm-hint" id="bgrmHint">👆 点击图片的背景颜色，可多点几处</div>
+    </div>
+    <div class="prop-row bgrm-row">
+      <span class="prop-label">容差</span>
+      <input type="range" id="bgrmTolerance" min="0" max="120" value="40" oninput="onBgrmTolChange()">
+      <span class="prop-value" id="bgrmTolVal">40</span>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-outline" onclick="closeBgrm()">✕ 取消</button>
+      <button class="btn-outline" id="btnBgrmSave" onclick="saveBgrmToLibrary()" disabled>📥 存贴图库</button>
+      <button class="btn-primary" id="btnBgrmApply" onclick="applyBgrm()" disabled>✅ 应用</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -1012,6 +1058,9 @@ canvas.addEventListener('wheel', onWheel);
 canvas.addEventListener('touchstart', onTouchStart, { passive: false });
 canvas.addEventListener('touchmove', onTouchMove, { passive: false });
 canvas.addEventListener('touchend', onTouchEnd);
+
+// Background-removal preview canvas tap
+document.getElementById('bgrmCanvas').addEventListener('pointerdown', onBgrmTap);
 
 function getCanvasPos(e) {
   const rect = canvas.getBoundingClientRect();
@@ -2575,6 +2624,203 @@ function commitCut(idx, pieces) {
   selectSticker(best.id);
   showToast('✂ 已切成 ' + pieces.length + ' 块');
   render();
+}
+
+// ==================== BACKGROUND REMOVAL (去背景) ====================
+// Magic-wand background removal: tap a background pixel, the connected region of
+// similar colour is flooded and made transparent. Works on any solid-ish bg.
+let bgrmState = null; // { imgCanvas, imgData, w, h, work, removed, seeds, cropUrl, cropSize }
+const BGRM_MAX = 1024; // cap processing resolution for speed
+
+function openBgrm() {
+  if (!selectedId) return;
+  const sticker = stickers.find(s => s.id === selectedId);
+  if (!sticker) return;
+  const src = sticker.adjustedImage || sticker.image;
+  if (!src) return;
+
+  let w = src.naturalWidth, h = src.naturalHeight;
+  const sc = Math.min(1, BGRM_MAX / Math.max(w, h));
+  w = Math.max(1, Math.round(w * sc)); h = Math.max(1, Math.round(h * sc));
+
+  const imgCanvas = document.createElement('canvas');
+  imgCanvas.width = w; imgCanvas.height = h;
+  const ictx = imgCanvas.getContext('2d');
+  ictx.drawImage(src, 0, 0, w, h);
+
+  bgrmState = {
+    imgCanvas: imgCanvas,
+    imgData: ictx.getImageData(0, 0, w, h),
+    w: w, h: h,
+    work: null,
+    removed: new Uint8Array(w * h),
+    seeds: [],
+    cropUrl: null,
+    cropSize: null,
+  };
+  document.getElementById('bgrmModal').style.display = 'flex';
+  document.getElementById('btnBgrmApply').disabled = true;
+  document.getElementById('btnBgrmSave').disabled = true;
+  document.getElementById('bgrmHint').textContent = '👆 点击图片的背景颜色，可多点几处';
+  redrawBgrmPreview();
+}
+
+function closeBgrm() {
+  document.getElementById('bgrmModal').style.display = 'none';
+  bgrmState = null;
+}
+
+function bgrmTapPos(e) {
+  const canvas = document.getElementById('bgrmCanvas');
+  const rect = canvas.getBoundingClientRect();
+  const x = Math.round((e.clientX - rect.left) / rect.width * bgrmState.w);
+  const y = Math.round((e.clientY - rect.top) / rect.height * bgrmState.h);
+  return { x: Math.max(0, Math.min(bgrmState.w - 1, x)), y: Math.max(0, Math.min(bgrmState.h - 1, y)) };
+}
+
+function bgrmColorClose(idx, r, g, b, tol) {
+  const d = bgrmState.imgData.data;
+  if (d[idx + 3] < 8) return false; // transparent pixels act as barriers
+  const dr = d[idx] - r, dg = d[idx + 1] - g, db = d[idx + 2] - b;
+  return dr * dr + dg * dg + db * db <= tol * tol;
+}
+
+function floodRemoveBg(seedX, seedY, tol) {
+  const st = bgrmState;
+  const data = st.imgData.data;
+  const w = st.w, h = st.h;
+  const si = (seedY * w + seedX) * 4;
+  const sr = data[si], sg = data[si + 1], sb = data[si + 2];
+  const stack = [seedY * w + seedX];
+  st.removed[seedY * w + seedX] = 1;
+  while (stack.length) {
+    const p = stack.pop();
+    const px = p % w, py = (p / w) | 0;
+    if (px > 0)     { const q = p - 1;     if (!st.removed[q] && bgrmColorClose(q * 4, sr, sg, sb, tol)) { st.removed[q] = 1; stack.push(q); } }
+    if (px < w - 1) { const q = p + 1;     if (!st.removed[q] && bgrmColorClose(q * 4, sr, sg, sb, tol)) { st.removed[q] = 1; stack.push(q); } }
+    if (py > 0)     { const q = p - w;     if (!st.removed[q] && bgrmColorClose(q * 4, sr, sg, sb, tol)) { st.removed[q] = 1; stack.push(q); } }
+    if (py < h - 1) { const q = p + w;     if (!st.removed[q] && bgrmColorClose(q * 4, sr, sg, sb, tol)) { st.removed[q] = 1; stack.push(q); } }
+  }
+}
+
+function rebuildBgrm() {
+  const st = bgrmState;
+  if (!st) return;
+  if (!st.work) { st.work = document.createElement('canvas'); st.work.width = st.w; st.work.height = st.h; }
+  const wctx = st.work.getContext('2d');
+  const img = wctx.createImageData(st.w, st.h);
+  const out = img.data;
+  const src = st.imgData.data;
+  for (let i = 0; i < st.w * st.h; i++) {
+    const o = i * 4;
+    out[o] = src[o]; out[o + 1] = src[o + 1]; out[o + 2] = src[o + 2];
+    out[o + 3] = st.removed[i] ? 0 : src[o + 3];
+  }
+  wctx.putImageData(img, 0, 0);
+  st.cropUrl = null; st.cropSize = null;
+}
+
+function redrawBgrmPreview() {
+  const st = bgrmState;
+  if (!st) return;
+  const canvas = document.getElementById('bgrmCanvas');
+  canvas.width = st.w; canvas.height = st.h;
+  const ctx = canvas.getContext('2d');
+  // checkerboard so transparency is visible
+  const pat = document.createElement('canvas'); pat.width = 16; pat.height = 16;
+  const pctx = pat.getContext('2d');
+  pctx.fillStyle = '#ffffff'; pctx.fillRect(0, 0, 16, 16);
+  pctx.fillStyle = '#e2e8f0'; pctx.fillRect(0, 0, 8, 8); pctx.fillRect(8, 8, 8, 8);
+  ctx.fillStyle = ctx.createPattern(pat, 'repeat');
+  ctx.fillRect(0, 0, st.w, st.h);
+  ctx.drawImage(st.work || st.imgCanvas, 0, 0);
+}
+
+function onBgrmTap(e) {
+  if (!bgrmState) return;
+  e.preventDefault();
+  const { x, y } = bgrmTapPos(e);
+  const tol = parseInt(document.getElementById('bgrmTolerance').value, 10);
+  bgrmState.seeds.push({ x: x, y: y });
+  floodRemoveBg(x, y, tol);
+  rebuildBgrm();
+  redrawBgrmPreview();
+  document.getElementById('bgrmHint').textContent = '继续点击可删除更多 · 调容差可重新抠';
+  document.getElementById('btnBgrmApply').disabled = false;
+  document.getElementById('btnBgrmSave').disabled = false;
+}
+
+function onBgrmTolChange() {
+  const el = document.getElementById('bgrmTolerance');
+  document.getElementById('bgrmTolVal').textContent = el.value;
+  if (!bgrmState) return;
+  const st = bgrmState;
+  st.removed.fill(0);
+  const tol = parseInt(el.value, 10);
+  for (const s of st.seeds) floodRemoveBg(s.x, s.y, tol);
+  rebuildBgrm();
+  redrawBgrmPreview();
+}
+
+function getBgrmCropUrl() {
+  const st = bgrmState;
+  if (!st) return null;
+  if (st.cropUrl) return st.cropUrl;
+  const wctx = st.work.getContext('2d');
+  const data = wctx.getImageData(0, 0, st.w, st.h).data;
+  let minX = st.w, minY = st.h, maxX = -1, maxY = -1;
+  for (let y = 0; y < st.h; y++) for (let x = 0; x < st.w; x++) {
+    if (data[(y * st.w + x) * 4 + 3] > 8) {
+      if (x < minX) minX = x; if (x > maxX) maxX = x;
+      if (y < minY) minY = y; if (y > maxY) maxY = y;
+    }
+  }
+  if (maxX < 0) return null;
+  const bw = maxX - minX + 1, bh = maxY - minY + 1;
+  const crop = document.createElement('canvas');
+  crop.width = bw; crop.height = bh;
+  crop.getContext('2d').drawImage(st.work, minX, minY, bw, bh, 0, 0, bw, bh);
+  st.cropUrl = crop.toDataURL('image/png');
+  st.cropSize = { w: bw, h: bh };
+  return st.cropUrl;
+}
+
+function applyBgrm() {
+  const url = getBgrmCropUrl();
+  if (!url) { showToast('⚠️ 没抠出内容，请先点背景'); return; }
+  const sticker = stickers.find(s => s.id === selectedId);
+  if (!sticker) return;
+  const img = new Image();
+  img.onload = () => {
+    const ratio = bgrmState.cropSize.h / bgrmState.cropSize.w;
+    sticker.image = img;
+    sticker.originalImage = img;
+    if (!sticker.width) sticker.width = 100;
+    sticker.height = Math.round(sticker.width * ratio);
+    sticker.adjustedImage = null;
+    sticker.adjustments = null;
+    sticker.shadowEnabled = false;
+    sticker.shadowCanvas = null;
+    closeBgrm();
+    render();
+    showToast('✅ 已去背景');
+  };
+  img.src = url;
+}
+
+function saveBgrmToLibrary() {
+  const url = getBgrmCropUrl();
+  if (!url) { showToast('⚠️ 没抠出内容'); return; }
+  resizeImageDataUrl(url, 400, (dataUrl400) => {
+    resizeImageDataUrl(dataUrl400, 128, (thumb128) => {
+      const id = 'custom_' + Date.now();
+      const name = '抠图贴纸 ' + new Date().toLocaleTimeString();
+      customStickers.push({ id: id, name: name, dataUrl: dataUrl400, thumb: thumb128 });
+      saveCustomStickers();
+      renderCustomStickerGrid();
+      showToast('✅ 已存入贴图库');
+    });
+  });
 }
 
 // ==================== EXPORT ====================
