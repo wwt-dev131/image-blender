@@ -2734,9 +2734,8 @@ function bgrmColorClose(idx, r, g, b, tol) {
 
 function bgrmEdgeThreshold() {
   // higher 容差 → lower threshold → snaps to finer/weaker lines
-  // default (40) → 380: ignores faint impurity edges, snaps to the object's real outline
   const tol = parseInt(document.getElementById('bgrmTolerance').value, 10);
-  return Math.max(0, 460 - tol * 2);
+  return Math.max(0, 220 - tol);
 }
 
 // 吸附线条 mode: flood stops at strong edges, so the boundary snaps to the
@@ -2800,6 +2799,7 @@ function setBgrmMode(mode) {
   document.getElementById('btnBgrmColor').classList.toggle('active', mode === 'color');
   bgrmState.removed.fill(0);
   bgrmState.seeds = [];
+  bgrmState.shrinkKeep = null;
   bgrmState.loop = [];
   bgrmState.loopMask = null;
   if (mode === 'loop') {
@@ -2822,25 +2822,18 @@ function pointInPolygon(x, y, poly) {
   return inside;
 }
 
-function shrinkToEdges(mask, edge, w, h, edgeT) {
-  // remove the mask's outer layers inward, stopping at strong edges
-  const remove = new Uint8Array(w * h);
-  const queue = [];
+// remove one boundary layer of the keep region, stopping at strong edges;
+// returns true if anything was removed this step
+function shrinkStep(keep, edge, w, h, edgeT) {
+  const toRemove = [];
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const i = y * w + x;
-    if (!mask[i]) continue;
-    const outside = (x > 0 && !mask[i - 1]) || (x < w - 1 && !mask[i + 1]) || (y > 0 && !mask[i - w]) || (y < h - 1 && !mask[i + w]);
-    if (outside && edge[i] < edgeT) { remove[i] = 1; queue.push(i); }
+    if (!keep[i]) continue;
+    const outside = (x > 0 && !keep[i - 1]) || (x < w - 1 && !keep[i + 1]) || (y > 0 && !keep[i - w]) || (y < h - 1 && !keep[i + w]);
+    if (outside && edge[i] < edgeT) toRemove.push(i);
   }
-  while (queue.length) {
-    const p = queue.pop();
-    const px = p % w, py = (p / w) | 0;
-    if (px > 0)     { const q = p - 1;     if (mask[q] && !remove[q] && edge[q] < edgeT) { remove[q] = 1; queue.push(q); } }
-    if (px < w - 1) { const q = p + 1;     if (mask[q] && !remove[q] && edge[q] < edgeT) { remove[q] = 1; queue.push(q); } }
-    if (py > 0)     { const q = p - w;     if (mask[q] && !remove[q] && edge[q] < edgeT) { remove[q] = 1; queue.push(q); } }
-    if (py < h - 1) { const q = p + w;     if (mask[q] && !remove[q] && edge[q] < edgeT) { remove[q] = 1; queue.push(q); } }
-  }
-  return remove;
+  for (const i of toRemove) keep[i] = 0;
+  return toRemove.length > 0;
 }
 
 function runLoopShrink() {
@@ -2855,13 +2848,34 @@ function runLoopShrink() {
     if (pointInPolygon(x, y, st.loop)) mask[y * w + x] = 1;
   }
   st.loopMask = mask;
-  const remove = shrinkToEdges(mask, st.edge, w, h, bgrmEdgeThreshold());
-  st.removed.fill(0);
-  for (let i = 0; i < w * h; i++) if (!mask[i] || remove[i]) st.removed[i] = 1;
-  rebuildBgrm();
+  // animate the shrink inward; hard cap so it can never eat the whole object
+  st.shrinkKeep = mask.slice();
+  st.shrinkDepth = 0;
+  st.shrinkMaxDepth = Math.max(10, Math.round(Math.min(w, h) * 0.3));
+  setTimeout(shrinkTick, 16);
+}
+
+function shrinkTick() {
+  const st = bgrmState;
+  if (!st || !st.shrinkKeep) return;
+  const changed = shrinkStep(st.shrinkKeep, st.edge, st.w, st.h, bgrmEdgeThreshold());
+  st.shrinkDepth++;
+  syncRemovedFromKeep();
   redrawBgrmPreview();
-  updateBgrmButtons();
-  document.getElementById('bgrmHint').textContent = '✅ 已吸附，可重画或调容差，圈外背景已删';
+  if (changed && st.shrinkDepth < st.shrinkMaxDepth) {
+    setTimeout(shrinkTick, 16);
+  } else {
+    st.shrinkKeep = null;
+    updateBgrmButtons();
+    document.getElementById('bgrmHint').textContent = '✅ 已吸附到轮廓，可重画或调容差';
+  }
+}
+
+function syncRemovedFromKeep() {
+  const st = bgrmState;
+  const keep = st.shrinkKeep;
+  for (let i = 0; i < st.w * st.h; i++) st.removed[i] = keep[i] ? 0 : 1;
+  rebuildBgrm();
 }
 
 function rebuildBgrm() {
@@ -2929,7 +2943,8 @@ function bgrmPointerDown(e) {
   };
   try { document.getElementById('bgrmCanvas').setPointerCapture(e.pointerId); } catch (err) {}
   if (bgrmState.mode === 'loop') {
-    // start drawing a new loop
+    // start drawing a new loop (cancel any running shrink animation)
+    bgrmState.shrinkKeep = null;
     bgrmState.loop = [];
     bgrmState.loopMask = null;
     bgrmState.removed.fill(0);
@@ -3007,6 +3022,7 @@ function undoBgrm() {
   if (!st) return;
   if (st.mode === 'loop') {
     // clear the drawn loop and removal (back to original)
+    st.shrinkKeep = null;
     st.loop = [];
     st.loopMask = null;
     st.removed.fill(0);
