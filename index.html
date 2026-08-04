@@ -81,6 +81,9 @@ body {
 .upload-sticker-btn:hover { border-color: #14b8a6; color: #1f2937; }
 .upload-split { display: flex; gap: 6px; margin-top: auto; flex-shrink: 0; }
 .upload-split .upload-sticker-btn { margin-top: 0; flex: 1; }
+/* Sticker drawer toggle (mobile only) */
+.sidebar-toggle { display: none; }
+.sidebar-drawer { display: contents; }
 
 /* ==================== Center - Canvas ==================== */
 .canvas-container {
@@ -252,13 +255,22 @@ canvas {
 
   /* Canvas first on mobile */
   .canvas-container { order: 1; flex: 1 1 0; min-height: 260px; }
-  .sidebar { order: 2; width: 100%; min-width: 0; height: 28vh; overflow: hidden; }
+  .sidebar { order: 2; width: 100%; min-width: 0; height: auto; }
+  .sidebar-toggle {
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    padding: 8px; font-size: 12px; font-weight: 700; color: #64748b;
+    background: #f1f5f9; cursor: pointer; flex-shrink: 0;
+  }
+  .sidebar-drawer { display: block; max-height: 0; overflow: hidden; transition: max-height .25s ease; }
+  .sidebar.expanded .sidebar-drawer { max-height: 45vh; overflow-y: auto; }
+  .sidebar.expanded #stickerChevron { transform: rotate(180deg); }
   .properties { order: 3; width: 100%; min-width: 0; max-height: 175px; padding: 8px; }
   canvas { max-width: 100%; max-height: 100%; }
 
-  .sidebar-section { padding: 6px 10px; }
+  .sidebar-section { padding: 6px 10px; display: block; }
   .sidebar-title { margin-bottom: 4px; }
-  .emoji-grid { grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); }
+  .emoji-grid { grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); overflow-y: visible; }
+  .upload-split { margin-top: 8px; }
   .emoji-btn { font-size: 20px; }
   .upload-sticker-btn { padding: 8px; font-size: 11px; }
 
@@ -303,18 +315,23 @@ canvas {
 
   <!-- Left: Sticker Library -->
   <div class="sidebar">
-    <div class="sidebar-section">
-      <div class="sidebar-title">📦 我的贴图</div>
-      <div class="emoji-grid" id="custom-stickers-grid"></div>
-      <div class="upload-split">
-        <div class="upload-sticker-btn" onclick="document.getElementById('stickerUpload').click()">
-          ➕ 上传贴图
+    <div class="sidebar-toggle" onclick="toggleStickerDrawer()">
+      <span>📦 我的贴图</span>
+      <span id="stickerChevron">▲</span>
+    </div>
+    <div class="sidebar-drawer" id="stickerDrawer">
+      <div class="sidebar-section">
+        <div class="emoji-grid" id="custom-stickers-grid"></div>
+        <div class="upload-split">
+          <div class="upload-sticker-btn" onclick="document.getElementById('stickerUpload').click()">
+            ➕ 上传贴图
+          </div>
+          <div class="upload-sticker-btn" onclick="document.getElementById('bgUpload').click()">
+            🖼 上传底图
+          </div>
         </div>
-        <div class="upload-sticker-btn" onclick="document.getElementById('bgUpload').click()">
-          🖼 上传底图
-        </div>
+        <input type="file" id="stickerUpload" accept="image/png,image/webp,image/jpeg" hidden onchange="handleStickerUpload(event)">
       </div>
-      <input type="file" id="stickerUpload" accept="image/png,image/webp,image/jpeg" hidden onchange="handleStickerUpload(event)">
     </div>
   </div>
 
@@ -611,6 +628,14 @@ function renderCustomStickerGrid() {
             title="删除贴图">✕</span>
     </div>
   `).join('');
+}
+
+// Toggle the mobile sticker drawer (expand/collapse the preview area)
+function toggleStickerDrawer() {
+  const sidebar = document.querySelector('.sidebar');
+  if (!sidebar) return;
+  const expanded = sidebar.classList.toggle('expanded');
+  if (expanded) renderCustomStickerGrid(); // refresh in case stickers changed while closed
 }
 
 function addCustomStickerById(id) {
