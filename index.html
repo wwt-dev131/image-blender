@@ -175,6 +175,17 @@ canvas {
 }
 .toast.show { opacity: 1; }
 
+/* ==================== Line-cut toolbar ==================== */
+.cut-bar {
+  position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+  background: rgba(18,18,36,0.95); border: 1px solid #3a3a5a; border-radius: 10px;
+  padding: 8px 12px; z-index: 5; display: none; gap: 8px; align-items: center; flex-wrap: wrap;
+  box-shadow: 0 4px 16px rgba(0,0,0,.4); max-width: 96%;
+}
+.cut-bar #cutStatus { font-size: 12px; color: #ccc; }
+.cut-bar button { min-height: 44px; padding: 8px 14px; font-size: 13px; }
+.cut-bar button.brush-on { background: #7c8cf8; color: #fff; border-color: #7c8cf8; }
+
 /* ==================== Custom touch sliders ==================== */
 /* Industry-standard approach: draw our own track/thumb and take over all
    touch handling, so the native range input can never jump on tap.
@@ -193,6 +204,8 @@ canvas {
   .header .logo { font-size: 15px; }
   .header .actions { flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
   .header button, .header select { padding: 6px 10px; font-size: 12px; }
+  .cut-bar { top: 4px; }
+  .cut-bar button { padding: 7px 10px; font-size: 12px; }
 
   .main { flex-direction: column; }
 
@@ -264,6 +277,13 @@ canvas {
        ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
     <div class="canvas-wrapper" id="canvasWrapper">
       <canvas id="mainCanvas"></canvas>
+      <div class="cut-bar" id="cutBar">
+        <span id="cutStatus">识别中…</span>
+        <button class="btn-outline" id="btnCutBrush" onclick="toggleCutBrush()">🖊 画线</button>
+        <button class="btn-outline" id="btnCutClear" onclick="clearManualLines()">🧹 清手画</button>
+        <button class="btn-primary" id="btnCutApply" onclick="applyCut()">✂ 切割</button>
+        <button class="btn-outline" id="btnCutCancel" onclick="cancelCutMode()">✕ 取消</button>
+      </div>
       <div class="drop-zone-overlay" id="dropZone">
         <div class="drop-zone-text">
           <span class="icon">📁</span>
@@ -314,6 +334,7 @@ canvas {
           <button class="btn-outline" style="flex:1;font-size:11px;padding:4px 8px;" onclick="moveStickerUp()">⬆ 上移</button>
           <button class="btn-outline" style="flex:1;font-size:11px;padding:4px 8px;" onclick="moveStickerDown()">⬇ 下移</button>
         </div>
+        <button class="btn-outline" style="width:100%;margin-top:4px;padding:6px;font-size:12px;" onclick="enterCutMode()">✂ 线条切割</button>
         <button class="btn-danger" style="width:100%;margin-top:4px;padding:6px;font-size:12px;" onclick="deleteSelectedSticker()">🗑 删除贴图</button>
       </div>
 
@@ -390,6 +411,33 @@ let dragCornerIndex = -1;        // Which corner (0=TL, 1=TR, 2=BR, 3=BL)
 
 const HANDLE_RADIUS = 8;
 const HANDLE_HIT_RADIUS = 12;
+
+// ==================== LINE CUT STATE ====================
+// Line-cut mode: cut the selected sticker along background lines (auto-detected
+// or hand-drawn) into independent sticker pieces. region is the analysis area
+// (canvas coords); wall masks are Uint8Array barriers; overlay is a full-canvas
+// canvas used to highlight the detected/drawn lines.
+const CUT_PAD = 12;         // region expansion around the sticker bbox
+const ALPHA_MIN = 8;        // pixels below this alpha are treated as empty
+const MIN_PIXELS = 36;      // smallest piece kept (~6x6 px)
+const MAX_PIECES = 40;      // cap on number of pieces
+const CUT_MAXWORK = 384;    // longest edge when downsampling for line detection
+const BRUSH_R = 8;          // mouse brush radius (canvas px)
+const BRUSH_R_TOUCH = 16;   // touch brush radius
+let cutState = {
+  active: false,            // in cut mode?
+  stickerId: null,          // sticker being cut
+  region: null,             // {x,y,w,h} analysis area
+  autoWall: null,           // Uint8Array (region size): auto-detected lines
+  manualWall: null,         // Uint8Array (canvas size): hand-drawn lines
+  regionAlpha: null,        // Uint8ClampedArray RGBA of sticker rasterised into region
+  stickerBox: null,         // opaque bbox of the sticker in region coords {minX,minY,maxX,maxY}
+  overlay: null,            // full-canvas canvas, highlights lines
+  brush: false,             // manual brush on?
+  brushActive: false,
+  lastPoint: null,
+  analyzing: false,
+};
 
 // ==================== INIT ====================
 const canvas = document.getElementById('mainCanvas');
@@ -565,8 +613,13 @@ function render() {
     drawSticker(sticker);
   }
 
+  // Line-cut overlay (highlight detected/drawn lines)
+  if (cutState.active && cutState.overlay) {
+    ctx.drawImage(cutState.overlay, 0, 0);
+  }
+
   // Draw selection handles
-  if (selectedId) {
+  if (selectedId && !cutState.active) {
     const sticker = stickers.find(s => s.id === selectedId);
     if (sticker) drawSelectionHandles(sticker);
   }
@@ -618,7 +671,7 @@ function drawSticker(sticker) {
   ctx.drawImage(img, -w/2, -h/2, w, h);
 
   // Selection indicator
-  if (sticker.id === selectedId) {
+  if (!cutState.active && sticker.id === selectedId) {
     ctx.strokeStyle = 'rgba(124,140,248,0.6)';
     ctx.lineWidth = 2;
     ctx.setLineDash([4, 3]);
@@ -731,6 +784,7 @@ async function addImageSticker(img) {
 }
 
 function selectSticker(id) {
+  if (cutState.active) cancelCutMode();
   selectedId = id;
   document.getElementById('noSelectionHint').style.display = 'none';
   document.getElementById('stickerProps').style.display = '';
@@ -754,6 +808,7 @@ function selectSticker(id) {
 }
 
 function deselectAll() {
+  if (cutState.active) cancelCutMode();
   selectedId = null;
   document.getElementById('noSelectionHint').style.display = '';
   document.getElementById('stickerProps').style.display = 'none';
@@ -762,6 +817,7 @@ function deselectAll() {
 }
 
 function deleteSelectedSticker() {
+  if (cutState.active) cancelCutMode();
   if (!selectedId) return;
   saveUndo();
   stickers = stickers.filter(s => s.id !== selectedId);
@@ -1022,6 +1078,16 @@ function onMouseDown(e) {
   if (e.button !== 0) return;
   const pos = getCanvasPos(e);
 
+  // Line-cut mode: only the brush draws; normal interactions are ignored
+  if (cutState.active) {
+    if (cutState.brush) {
+      interactionMode = 'cutdraw';
+      startManualStroke(pos, e);
+    }
+    e.preventDefault();
+    return;
+  }
+
   // Check if clicking on selected sticker's handles
   if (selectedId) {
     const sticker = stickers.find(s => s.id === selectedId);
@@ -1068,6 +1134,13 @@ function onMouseDown(e) {
 
 function onMouseMove(e) {
   const pos = getCanvasPos(e);
+
+  // Line-cut brush drawing
+  if (interactionMode === 'cutdraw') {
+    extendManualStroke(pos, e);
+    e.preventDefault();
+    return;
+  }
 
   if (interactionMode === 'move') {
     const dx = pos.x - dragStartMouse.x;
@@ -1139,6 +1212,9 @@ function onMouseMove(e) {
 }
 
 function onMouseUp(e) {
+  if (interactionMode === 'cutdraw') {
+    endManualStroke();
+  }
   if (interactionMode) {
     // Invalidate cached adjustments if sticker was moved/resized/rotated
     if (selectedId && (interactionMode === 'move' || interactionMode === 'scale' || interactionMode === 'rotate')) {
@@ -1156,6 +1232,7 @@ function onMouseUp(e) {
 }
 
 function onWheel(e) {
+  if (cutState.active) return;
   if (selectedId) {
     const sticker = stickers.find(s => s.id === selectedId);
     if (sticker && pointInSticker(e.offsetX, e.offsetY, sticker)) {
@@ -1177,7 +1254,7 @@ function onTouchStart(e) {
   if (e.touches.length === 1) {
     // Single touch - synthesize mouse event
     const touch = e.touches[0];
-    const mouseEvent = { button: 0, clientX: touch.clientX, clientY: touch.clientY, preventDefault: () => {} };
+    const mouseEvent = { button: 0, clientX: touch.clientX, clientY: touch.clientY, preventDefault: () => {}, _isTouch: true };
     onMouseDown(mouseEvent);
     e.preventDefault();
   } else if (e.touches.length === 2 && selectedId) {
@@ -1204,7 +1281,7 @@ function onTouchMove(e) {
     e.preventDefault();
   } else if (interactionMode && e.touches.length === 1) {
     const touch = e.touches[0];
-    onMouseMove({ clientX: touch.clientX, clientY: touch.clientY });
+    onMouseMove({ clientX: touch.clientX, clientY: touch.clientY, _isTouch: true });
     e.preventDefault();
   }
 }
@@ -2023,6 +2100,483 @@ function resetStickerAdjustments() {
   showToast('↩ 融合效果已撤销');
 }
 
+// ==================== LINE CUT ====================
+// Cut the selected sticker into independent pieces along background lines
+// (auto-detected via Sobel + Otsu) and/or hand-drawn lines. Each piece becomes
+// a normal sticker, so selection / transform / layers / undo / export all work.
+function expandCutRegion(bb) {
+  const x = Math.max(0, Math.floor(bb.x) - CUT_PAD);
+  const y = Math.max(0, Math.floor(bb.y) - CUT_PAD);
+  const w = Math.min(canvas.width, Math.ceil(bb.x + bb.w) + CUT_PAD) - x;
+  const h = Math.min(canvas.height, Math.ceil(bb.y + bb.h) + CUT_PAD) - y;
+  return { x, y, w, h };
+}
+
+function enterCutMode() {
+  if (!selectedId || cutState.active) return;
+  const sticker = stickers.find(s => s.id === selectedId);
+  if (!sticker) return;
+
+  const region = expandCutRegion(getStickerBoundingRect(sticker));
+  if (region.w <= 0 || region.h <= 0) return;
+
+  cutState.active = true;
+  cutState.stickerId = sticker.id;
+  cutState.region = region;
+  cutState.autoWall = null;
+  cutState.manualWall = new Uint8Array(canvas.width * canvas.height);
+  cutState.brush = false;
+  cutState.brushActive = false;
+  cutState.lastPoint = null;
+  cutState.analyzing = true;
+
+  // cache the sticker rasterised into the region (alpha source for flood fill)
+  const temp = rasterizeStickerToCanvas(sticker, region);
+  cutState.regionAlpha = temp.getContext('2d').getImageData(0, 0, region.w, region.h).data;
+
+  // compute the sticker's opaque bounding box (region coords)
+  {
+    const d = cutState.regionAlpha;
+    let bx = 1e9, by = 1e9, BX = -1, BY = -1;
+    for (let y = 0; y < region.h; y++) for (let x = 0; x < region.w; x++) {
+      if (d[(y * region.w + x) * 4 + 3] >= ALPHA_MIN) {
+        if (x < bx) bx = x; if (x > BX) BX = x;
+        if (y < by) by = y; if (y > BY) BY = y;
+      }
+    }
+    cutState.stickerBox = BX >= 0 ? { minX: bx, minY: by, maxX: BX, maxY: BY } : { minX: 0, minY: 0, maxX: region.w - 1, maxY: region.h - 1 };
+  }
+
+  // empty overlay canvas for highlighting + brush drawing
+  cutState.overlay = document.createElement('canvas');
+  cutState.overlay.width = canvas.width;
+  cutState.overlay.height = canvas.height;
+
+  const bar = document.getElementById('cutBar');
+  if (bar) bar.style.display = 'flex';
+  const btn = document.getElementById('btnCutBrush');
+  if (btn) btn.classList.remove('brush-on');
+  updateCutStatus();
+  render();
+  detectCutLinesAsync();
+}
+
+function exitCutMode(cancelled) {
+  cutState.active = false;
+  cutState.stickerId = null;
+  cutState.region = null;
+  cutState.autoWall = null;
+  cutState.manualWall = null;
+  cutState.regionAlpha = null;
+  cutState.stickerBox = null;
+  cutState.overlay = null;
+  cutState.brush = false;
+  cutState.brushActive = false;
+  cutState.lastPoint = null;
+  cutState.analyzing = false;
+  const bar = document.getElementById('cutBar');
+  if (bar) bar.style.display = 'none';
+  canvas.style.cursor = 'crosshair';
+  if (cancelled) showToast('已取消切割');
+  render();
+}
+
+function cancelCutMode() {
+  if (cutState.active) exitCutMode(true);
+}
+
+// ---- line detection (pure functions, region-sized) ----
+function otsuThreshold(hist) {
+  const total = hist.reduce((a, b) => a + b, 0);
+  if (total === 0) return 128;
+  let sum = 0;
+  for (let i = 0; i < 256; i++) sum += i * hist[i];
+  let sumB = 0, wB = 0, maxVar = 0, thr = 128;
+  for (let t = 0; t < 256; t++) {
+    wB += hist[t];
+    if (wB === 0) continue;
+    const wF = total - wB;
+    if (wF === 0) break;
+    sumB += t * hist[t];
+    const mB = sumB / wB, mF = (sum - sumB) / wF;
+    const v = wB * wF * (mB - mF) * (mB - mF);
+    if (v > maxVar) { maxVar = v; thr = t; }
+  }
+  return thr;
+}
+
+function dilateWall(wall, w, h) {
+  const out = new Uint8Array(wall.length);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    if (wall[y * w + x]) {
+      if (x > 0) out[y * w + x - 1] = 1;
+      if (x < w - 1) out[y * w + x + 1] = 1;
+      if (y > 0) out[(y - 1) * w + x] = 1;
+      if (y < h - 1) out[(y + 1) * w + x] = 1;
+    }
+  }
+  for (let i = 0; i < wall.length; i++) if (out[i]) wall[i] = 1;
+}
+
+function buildLineMask(bg, region) {
+  const s = Math.max(1, Math.ceil(Math.max(region.w, region.h) / CUT_MAXWORK));
+  const rw = Math.max(3, Math.floor(region.w / s));
+  const rh = Math.max(3, Math.floor(region.h / s));
+  const d = bg.data, W = bg.width;
+  const lum = new Float32Array(rw * rh);
+  for (let y = 0; y < rh; y++) for (let x = 0; x < rw; x++) {
+    const i = ((region.y + y * s) * W + (region.x + x * s)) * 4;
+    lum[y * rw + x] = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+  }
+  const mag = new Float32Array(rw * rh), hist = new Uint32Array(256);
+  for (let y = 1; y < rh - 1; y++) for (let x = 1; x < rw - 1; x++) {
+    const p = y * rw + x;
+    const gx = (lum[p - rw - 1] + 2 * lum[p - 1] + lum[p + rw - 1])
+             - (lum[p - rw + 1] + 2 * lum[p + 1] + lum[p + rw + 1]);
+    const gy = (lum[p - rw - 1] + 2 * lum[p - rw] + lum[p - rw + 1])
+             - (lum[p + rw - 1] + 2 * lum[p + rw] + lum[p + rw + 1]);
+    const m = Math.min(255, Math.abs(gx) + Math.abs(gy));
+    mag[p] = m; hist[m | 0]++;
+  }
+  const otsu = otsuThreshold(hist);
+  const k = (detectedStyle && detectedStyle.style === 'sketch') ? 0.35 : 0.55;
+  const thr = Math.max(otsu * k, 30);
+  const wall = new Uint8Array(region.w * region.h);
+  for (let y = 0; y < rh; y++) for (let x = 0; x < rw; x++) {
+    if (mag[y * rw + x] > thr) {
+      for (let dy = 0; dy < s && y * s + dy < region.h; dy++)
+        for (let dx = 0; dx < s && x * s + dx < region.w; dx++)
+          wall[(y * s + dy) * region.w + (x * s + dx)] = 1;
+    }
+  }
+  dilateWall(wall, region.w, region.h);
+  return wall;
+}
+
+function detectCutLinesAsync() {
+  const myId = cutState.stickerId;
+  const myRegion = { x: cutState.region.x, y: cutState.region.y, w: cutState.region.w, h: cutState.region.h };
+  setTimeout(() => {
+    if (!cutState.active || cutState.stickerId !== myId) return;
+    let wall = null;
+    if (bgImageData) {
+      try { wall = buildLineMask(bgImageData, myRegion); } catch (err) { wall = null; }
+    }
+    if (!cutState.active || cutState.stickerId !== myId) return;
+    cutState.autoWall = wall;
+    cutState.analyzing = false;
+    rebuildCutOverlay();
+    updateCutStatus();
+    render();
+    const hasAuto = wall && wall.some(v => v === 1);
+    if (!hasAuto && bgImageData) {
+      cutState.brush = true;
+      const btn = document.getElementById('btnCutBrush');
+      if (btn) btn.classList.add('brush-on');
+      showToast('未识别到底图线条，已开启画笔，请手动画线');
+    }
+  }, 0);
+}
+
+// ---- rasterise + flood-fill + extract ----
+function rasterizeStickerToCanvas(sticker, region) {
+  const tc = document.createElement('canvas');
+  tc.width = region.w; tc.height = region.h;
+  const c = tc.getContext('2d');
+  c.translate(sticker.x - region.x, sticker.y - region.y);
+  const sx = sticker.flipH ? -1 : 1, sy = sticker.flipV ? -1 : 1;
+  c.rotate(sticker.rotation * Math.PI / 180);
+  c.scale(sx, sy);
+  c.globalAlpha = sticker.opacity;
+  c.drawImage(sticker.adjustedImage || sticker.image,
+              -sticker.width / 2, -sticker.height / 2, sticker.width, sticker.height);
+  return tc;
+}
+
+function floodFillComponents(alpha, wall, w, h, minPixels) {
+  const N = w * h, label = new Int32Array(N), stack = new Int32Array(N);
+  const comps = [];
+  let compId = 0;
+  for (let i = 0; i < N; i++) {
+    if (label[i] || wall[i] === 1 || alpha[i * 4 + 3] < ALPHA_MIN) continue;
+    let sp = 0; stack[sp++] = i; label[i] = ++compId;
+    let count = 0, minX = 1e9, minY = 1e9, maxX = -1, maxY = -1;
+    while (sp > 0) {
+      const p = stack[--sp], px = p % w, py = (p / w) | 0;
+      count++;
+      if (px < minX) minX = px; if (px > maxX) maxX = px;
+      if (py < minY) minY = py; if (py > maxY) maxY = py;
+      if (px > 0)   { const q = p - 1;     if (!label[q] && wall[q] !== 1 && alpha[q * 4 + 3] >= ALPHA_MIN) { label[q] = compId; stack[sp++] = q; } }
+      if (px < w - 1) { const q = p + 1;   if (!label[q] && wall[q] !== 1 && alpha[q * 4 + 3] >= ALPHA_MIN) { label[q] = compId; stack[sp++] = q; } }
+      if (py > 0)   { const q = p - w;     if (!label[q] && wall[q] !== 1 && alpha[q * 4 + 3] >= ALPHA_MIN) { label[q] = compId; stack[sp++] = q; } }
+      if (py < h - 1) { const q = p + w;   if (!label[q] && wall[q] !== 1 && alpha[q * 4 + 3] >= ALPHA_MIN) { label[q] = compId; stack[sp++] = q; } }
+    }
+    if (count >= minPixels) comps.push({ id: compId, count: count, minX: minX, minY: minY, maxX: maxX, maxY: maxY });
+  }
+  return { label, comps };
+}
+
+// Drop "thin frame" components: a ring hugging all four edges of the sticker with
+// very little fill. These appear when a background line happens to align with the
+// sticker's own edge; they are artifacts, not real pieces.
+function filterCutComponents(comps, stickerBox) {
+  if (!comps.length || !stickerBox) return comps;
+  return comps.filter(c => {
+    const touchesLeft = c.minX <= stickerBox.minX + 3;
+    const touchesRight = c.maxX >= stickerBox.maxX - 3;
+    const touchesTop = c.minY <= stickerBox.minY + 3;
+    const touchesBottom = c.maxY >= stickerBox.maxY - 3;
+    const bw = c.maxX - c.minX + 1, bh = c.maxY - c.minY + 1;
+    const fillRatio = c.count / (bw * bh);
+    return !(touchesLeft && touchesRight && touchesTop && touchesBottom && fillRatio < 0.2);
+  });
+}
+
+function extractPieceAsDataUrl(tempCanvas, region, comp, label) {
+  const bw = comp.maxX - comp.minX + 1, bh = comp.maxY - comp.minY + 1;
+  const mask = document.createElement('canvas'); mask.width = bw; mask.height = bh;
+  const mctx = mask.getContext('2d');
+  const md = mctx.createImageData(bw, bh);
+  const mdd = md.data;
+  for (let y = comp.minY; y <= comp.maxY; y++) for (let x = comp.minX; x <= comp.maxX; x++) {
+    if (label[y * region.w + x] === comp.id) {
+      const o = ((y - comp.minY) * bw + (x - comp.minX)) * 4;
+      mdd[o] = mdd[o + 1] = mdd[o + 2] = mdd[o + 3] = 255;
+    }
+  }
+  mctx.putImageData(md, 0, 0);
+
+  const piece = document.createElement('canvas'); piece.width = bw; piece.height = bh;
+  const pc = piece.getContext('2d');
+  pc.drawImage(tempCanvas, comp.minX, comp.minY, bw, bh, 0, 0, bw, bh);
+  pc.globalCompositeOperation = 'destination-in';
+  pc.drawImage(mask, 0, 0);
+  return piece.toDataURL('image/png');
+}
+
+// ---- walls & overlay ----
+function unionWallMask() {
+  const r = cutState.region;
+  const w = new Uint8Array(r.w * r.h);
+  const aw = cutState.autoWall || [];
+  for (let i = 0; i < w.length; i++) if (aw[i]) w[i] = 1;
+  const mw = cutState.manualWall;
+  if (mw) {
+    const W = canvas.width;
+    for (let y = 0; y < r.h; y++) for (let x = 0; x < r.w; x++) {
+      const px = r.x + x, py = r.y + y;
+      if (px >= 0 && py >= 0 && px < W && py < canvas.height && mw[py * W + px]) w[y * r.w + x] = 1;
+    }
+  }
+  return w;
+}
+
+function rebuildCutOverlay() {
+  if (!cutState.overlay) return;
+  const octx = cutState.overlay.getContext('2d');
+  const img = octx.createImageData(canvas.width, canvas.height);
+  const d = img.data;
+  const r = cutState.region;
+  if (cutState.autoWall) {
+    for (let y = 0; y < r.h; y++) for (let x = 0; x < r.w; x++) {
+      if (cutState.autoWall[y * r.w + x]) {
+        const o = ((r.y + y) * canvas.width + (r.x + x)) * 4;
+        d[o] = 255; d[o + 1] = 80; d[o + 2] = 80; d[o + 3] = 140;
+      }
+    }
+  }
+  if (cutState.manualWall) {
+    for (let i = 0; i < cutState.manualWall.length; i++) {
+      if (cutState.manualWall[i]) {
+        const o = i * 4;
+        d[o] = 0; d[o + 1] = 220; d[o + 2] = 255; d[o + 3] = 200;
+      }
+    }
+  }
+  octx.putImageData(img, 0, 0);
+}
+
+function previewCutComponents() {
+  const r = cutState.region;
+  if (!cutState.regionAlpha || !r) return 0;
+  const wall = unionWallMask();
+  const res = floodFillComponents(cutState.regionAlpha, wall, r.w, r.h, MIN_PIXELS);
+  return filterCutComponents(res.comps, cutState.stickerBox).length;
+}
+
+function updateCutStatus() {
+  const el = document.getElementById('cutStatus');
+  if (!el) return;
+  if (cutState.analyzing) { el.textContent = '识别中…'; return; }
+  const n = previewCutComponents();
+  const manual = cutState.manualWall && cutState.manualWall.some(v => v === 1);
+  if (n <= 0) {
+    el.textContent = manual ? '未形成独立区域，请继续补画线条' : '未识别到底图线条，可点 🖊 画线';
+  } else if (n > MAX_PIECES) {
+    el.textContent = '将切成 ' + n + ' 块（过多），请加粗/补画线条分隔';
+  } else {
+    el.textContent = '将切成 ' + n + ' 块';
+  }
+}
+
+// ---- manual brush ----
+function toggleCutBrush() {
+  if (!cutState.active) return;
+  cutState.brush = !cutState.brush;
+  const btn = document.getElementById('btnCutBrush');
+  if (btn) btn.classList.toggle('brush-on', cutState.brush);
+  canvas.style.cursor = cutState.brush ? 'crosshair' : 'default';
+  showToast(cutState.brush ? '🖊 画笔已开启，在贴图上画切割线' : '画笔已关闭');
+}
+
+function clearManualLines() {
+  if (!cutState.active) return;
+  if (cutState.manualWall) cutState.manualWall.fill(0);
+  rebuildCutOverlay();
+  updateCutStatus();
+  render();
+}
+
+function brushRadius(e) {
+  return (e && e._isTouch) ? BRUSH_R_TOUCH : BRUSH_R;
+}
+
+function startManualStroke(pos, e) {
+  cutState.brushActive = true;
+  cutState.lastPoint = pos;
+  const r = brushRadius(e);
+  stampCircle(pos.x, pos.y, r);
+  stampOverlayDot(pos.x, pos.y, r);
+}
+
+function extendManualStroke(pos, e) {
+  if (!cutState.brushActive || !cutState.lastPoint) return;
+  const r = brushRadius(e);
+  stampLine(cutState.lastPoint.x, cutState.lastPoint.y, pos.x, pos.y, r);
+  strokeOverlayLine(cutState.lastPoint.x, cutState.lastPoint.y, pos.x, pos.y, r);
+  cutState.lastPoint = pos;
+  render();
+}
+
+function endManualStroke() {
+  cutState.brushActive = false;
+  cutState.lastPoint = null;
+  updateCutStatus();
+}
+
+function stampLine(x0, y0, x1, y1, r) {
+  const dx = x1 - x0, dy = y1 - y0;
+  const dist = Math.max(1, Math.round(Math.hypot(dx, dy)));
+  for (let t = 0; t <= dist; t++) {
+    stampCircle(Math.round(x0 + dx * t / dist), Math.round(y0 + dy * t / dist), r);
+  }
+}
+
+function stampCircle(cx, cy, r) {
+  const mw = cutState.manualWall;
+  const W = canvas.width, H = canvas.height;
+  if (!mw) return;
+  for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+    if (dx * dx + dy * dy <= r * r) {
+      const x = cx + dx, y = cy + dy;
+      if (x >= 0 && y >= 0 && x < W && y < H) mw[y * W + x] = 1;
+    }
+  }
+}
+
+function stampOverlayDot(x, y, r) {
+  if (!cutState.overlay) return;
+  const o = cutState.overlay.getContext('2d');
+  o.fillStyle = 'rgba(0,220,255,0.85)';
+  o.beginPath();
+  o.arc(x, y, r, 0, Math.PI * 2);
+  o.fill();
+}
+
+function strokeOverlayLine(x0, y0, x1, y1, r) {
+  if (!cutState.overlay) return;
+  const o = cutState.overlay.getContext('2d');
+  o.strokeStyle = 'rgba(0,220,255,0.85)';
+  o.lineWidth = r * 2;
+  o.lineCap = 'round';
+  o.beginPath();
+  o.moveTo(x0, y0);
+  o.lineTo(x1, y1);
+  o.stroke();
+}
+
+// ---- apply cut ----
+function applyCut() {
+  if (!cutState.active) return;
+  const r = cutState.region;
+  if (!r || !cutState.regionAlpha) return;
+  const wall = unionWallMask();
+  const res = floodFillComponents(cutState.regionAlpha, wall, r.w, r.h, MIN_PIXELS);
+  const comps = filterCutComponents(res.comps, cutState.stickerBox);
+  if (comps.length === 0) {
+    showToast('未形成独立区域，请画线分隔后再试');
+    return;
+  }
+  if (comps.length > MAX_PIECES) {
+    showToast('块数过多(' + comps.length + ')，请画更多线条细分');
+    return;
+  }
+  const sticker = stickers.find(s => s.id === cutState.stickerId);
+  if (!sticker) return;
+  const temp = rasterizeStickerToCanvas(sticker, r);
+  const idx = stickers.indexOf(sticker);
+
+  const promises = comps.map(comp => {
+    const url = extractPieceAsDataUrl(temp, r, comp, res.label);
+    return new Promise(resolve => {
+      const img = new Image();
+      img.onload = () => resolve({ img, comp });
+      img.onerror = () => resolve(null);
+      img.src = url;
+    });
+  });
+
+  Promise.all(promises).then(results => {
+    if (!cutState.active) return;
+    const pieces = results.filter(Boolean).map(({ img, comp }) => ({
+      id: 'sticker_' + (++stickerIdCounter),
+      type: 'image',
+      image: img,
+      originalImage: img,
+      x: r.x + (comp.minX + comp.maxX + 1) / 2,
+      y: r.y + (comp.minY + comp.maxY + 1) / 2,
+      width: comp.maxX - comp.minX + 1,
+      height: comp.maxY - comp.minY + 1,
+      rotation: 0,
+      opacity: 1,
+      flipH: false,
+      flipV: false,
+      shadowEnabled: false,
+      shadowCanvas: null,
+      shadowOffsetX: 0, shadowOffsetY: 0, shadowOpacity: 0.3,
+      adjustedImage: null,
+      adjustments: null,
+    }));
+    if (pieces.length === 0) {
+      showToast('未切出任何有效块');
+      exitCutMode(false);
+      return;
+    }
+    commitCut(idx, pieces);
+  });
+}
+
+function commitCut(idx, pieces) {
+  saveUndo();
+  stickers.splice(idx, 1, ...pieces);
+  let best = pieces[0];
+  for (const p of pieces) if (p.width * p.height > best.width * best.height) best = p;
+  exitCutMode(false);
+  selectSticker(best.id);
+  showToast('✂ 已切成 ' + pieces.length + ' 块');
+  render();
+}
+
 // ==================== EXPORT ====================
 function downloadResult() {
   if (!bgImage && stickers.length === 0) {
@@ -2282,12 +2836,13 @@ function updateUndoButtons() {
 // ==================== KEYBOARD SHORTCUTS ====================
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Delete' || e.key === 'Backspace') {
-    if (selectedId && document.activeElement === document.body) {
+    if (!cutState.active && selectedId && document.activeElement === document.body) {
       deleteSelectedSticker();
     }
   }
   if (e.key === 'Escape') {
-    deselectAll();
+    if (cutState.active) cancelCutMode();
+    else deselectAll();
   }
   if (e.ctrlKey && e.key === 'z' && !e.shiftKey) {
     e.preventDefault();
