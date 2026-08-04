@@ -3082,20 +3082,24 @@ const AI_JSEP_WASM = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.23.0/dist/o
 const U2NET_MEAN = [0.485, 0.456, 0.406];
 const U2NET_STD = [0.229, 0.224, 0.225];
 
+let aiProgressLabel = '';
+
 function showAiProgress(show, text) {
+  aiProgressLabel = text || '';
   const p = document.getElementById('aiProgress');
   if (!p) return;
   p.style.display = show ? 'block' : 'none';
-  if (text) document.getElementById('aiProgressText').textContent = text;
+  document.getElementById('aiProgressText').textContent = aiProgressLabel;
   if (!show) document.getElementById('aiProgressFill').style.width = '0%';
 }
 
 function updateAiProgress(pct) {
   document.getElementById('aiProgressFill').style.width = Math.round(pct * 100) + '%';
-  document.getElementById('aiProgressText').textContent = '下载中 ' + Math.round(pct * 100) + '%';
+  document.getElementById('aiProgressText').textContent = aiProgressLabel + ' ' + Math.round(pct * 100) + '%';
 }
 
 async function fetchWithProgress(url, onProgress) {
+  if (onProgress) onProgress(0); // reset the bar for this file
   const res = await fetch(url);
   if (!res.ok) throw new Error('下载失败(' + res.status + ')');
   const total = +res.headers.get('content-length') || 0;
@@ -3170,8 +3174,9 @@ async function aiCutout() {
     if (!aiSession) {
       if (!aiEngineLoaded) {
         // pre-download engine files (shows progress, warms browser cache)
-        showAiProgress(true, '下载 AI 引擎（首次约40MB，请稍等）');
+        showAiProgress(true, '下载 AI 引擎 1/2（约40MB，仅首次）');
         await fetchWithProgress(AI_WASM_URL, updateAiProgress);
+        showAiProgress(true, '下载 AI 引擎 2/2');
         await fetchWithProgress(AI_JSEP_WASM, updateAiProgress);
         await fetch(AI_JSEP_MJS);
         aiEngineLoaded = true;
