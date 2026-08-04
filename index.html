@@ -3094,8 +3094,10 @@ function showAiProgress(show, text) {
 }
 
 function updateAiProgress(pct) {
-  document.getElementById('aiProgressFill').style.width = Math.round(pct * 100) + '%';
-  document.getElementById('aiProgressText').textContent = aiProgressLabel + ' ' + Math.round(pct * 100) + '%';
+  // clamp to 0..100% (GitHub Pages may compress, making loaded > content-length)
+  const p = Math.max(0, Math.min(1, pct));
+  document.getElementById('aiProgressFill').style.width = Math.round(p * 100) + '%';
+  document.getElementById('aiProgressText').textContent = aiProgressLabel + ' ' + Math.round(p * 100) + '%';
 }
 
 async function fetchWithProgress(url, onProgress) {
