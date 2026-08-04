@@ -433,10 +433,6 @@ canvas {
       <div class="ai-progress-bar"><div class="ai-progress-fill" id="aiProgressFill"></div></div>
       <span id="aiProgressText">下载中…</span>
     </div>
-    <div class="bgrm-mode-row">
-      <button class="btn-outline" id="btnBgrmLine" onclick="setBgrmMode('loop')">✏️ 画圈吸附</button>
-      <button class="btn-outline" id="btnBgrmColor" onclick="setBgrmMode('color')">🎨 颜色</button>
-    </div>
     <div class="bgrm-preview" id="bgrmPreviewWrap">
       <canvas id="bgrmCanvas"></canvas>
       <div class="bgrm-hint" id="bgrmHint">👆 点击图片的背景颜色，可多点几处</div>
@@ -2691,11 +2687,9 @@ function openBgrm() {
     w: w, h: h,
     work: null,
     removed: new Uint8Array(w * h),
+    baseRemoved: new Uint8Array(w * h), // AI result; manual taps refine on top
     seeds: [],
-    loop: [],
-    loopMask: null,
     edge: null,
-    mode: 'loop',
     cropUrl: null,
     cropSize: null,
     bgCanvas: bgCanvas,
@@ -2706,12 +2700,8 @@ function openBgrm() {
   };
   document.getElementById('bgrmModal').style.display = 'flex';
   document.getElementById('bgrmZoomVal').textContent = '1×';
-  document.getElementById('btnBgrmLine').classList.add('active');
-  document.getElementById('btnBgrmColor').classList.remove('active');
-  document.getElementById('bgrmHint').textContent = '✏️ 在物体周围画一个圈，松开后自动吸附到线条';
+  document.getElementById('bgrmHint').textContent = '👆 点击背景手动微调，或点上方 🤖 AI 一键抠图';
   bgrmState.edge = buildBgrmEdgeMap();
-  bgrmState.loop = [];
-  bgrmState.loopMask = null;
   rebuildBgrm();
   updateBgrmButtons();
   redrawBgrmPreview();
@@ -2795,96 +2785,11 @@ function buildBgrmEdgeMap() {
 function runAllBgrmSeeds() {
   const st = bgrmState;
   if (!st) return;
-  st.removed.fill(0);
+  // rebuild the mask: AI base result + manual refinement seeds (undo only reverts the last seed)
+  st.removed.set(st.baseRemoved);
   for (const s of st.seeds) floodRemoveBg(s.x, s.y);
   rebuildBgrm();
   redrawBgrmPreview();
-}
-
-function setBgrmMode(mode) {
-  if (!bgrmState) return;
-  bgrmState.mode = mode;
-  document.getElementById('btnBgrmLine').classList.toggle('active', mode === 'loop');
-  document.getElementById('btnBgrmColor').classList.toggle('active', mode === 'color');
-  bgrmState.removed.fill(0);
-  bgrmState.seeds = [];
-  bgrmState.shrinkKeep = null;
-  bgrmState.loop = [];
-  bgrmState.loopMask = null;
-  if (mode === 'loop') {
-    document.getElementById('bgrmHint').textContent = '✏️ 在物体周围画一个圈，松开后自动吸附到线条';
-  } else {
-    document.getElementById('bgrmHint').textContent = '👆 点击图片的背景颜色，可多点几处';
-  }
-  rebuildBgrm();
-  redrawBgrmPreview();
-  updateBgrmButtons();
-}
-
-// ---- 画圈吸附: draw a loop around the object, it shrinks inward to the edges ----
-function pointInPolygon(x, y, poly) {
-  let inside = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const xi = poly[i].x, yi = poly[i].y, xj = poly[j].x, yj = poly[j].y;
-    if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) inside = !inside;
-  }
-  return inside;
-}
-
-// remove one boundary layer of the keep region, stopping at strong edges;
-// returns true if anything was removed this step
-function shrinkStep(keep, edge, w, h, edgeT) {
-  const toRemove = [];
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const i = y * w + x;
-    if (!keep[i]) continue;
-    const outside = (x > 0 && !keep[i - 1]) || (x < w - 1 && !keep[i + 1]) || (y > 0 && !keep[i - w]) || (y < h - 1 && !keep[i + w]);
-    if (outside && edge[i] < edgeT) toRemove.push(i);
-  }
-  for (const i of toRemove) keep[i] = 0;
-  return toRemove.length > 0;
-}
-
-function runLoopShrink() {
-  const st = bgrmState;
-  if (!st.loop || st.loop.length < 3) {
-    showToast('⚠️ 请先在物体周围画一个圈');
-    return;
-  }
-  const w = st.w, h = st.h;
-  const mask = new Uint8Array(w * h);
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    if (pointInPolygon(x, y, st.loop)) mask[y * w + x] = 1;
-  }
-  st.loopMask = mask;
-  // animate the shrink inward; hard cap so it can never eat the whole object
-  st.shrinkKeep = mask.slice();
-  st.shrinkDepth = 0;
-  st.shrinkMaxDepth = Math.max(10, Math.round(Math.min(w, h) * 0.3));
-  setTimeout(shrinkTick, 16);
-}
-
-function shrinkTick() {
-  const st = bgrmState;
-  if (!st || !st.shrinkKeep) return;
-  const changed = shrinkStep(st.shrinkKeep, st.edge, st.w, st.h, bgrmEdgeThreshold());
-  st.shrinkDepth++;
-  syncRemovedFromKeep();
-  redrawBgrmPreview();
-  if (changed && st.shrinkDepth < st.shrinkMaxDepth) {
-    setTimeout(shrinkTick, 16);
-  } else {
-    st.shrinkKeep = null;
-    updateBgrmButtons();
-    document.getElementById('bgrmHint').textContent = '✅ 已吸附到轮廓，可重画或调容差';
-  }
-}
-
-function syncRemovedFromKeep() {
-  const st = bgrmState;
-  const keep = st.shrinkKeep;
-  for (let i = 0; i < st.w * st.h; i++) st.removed[i] = keep[i] ? 0 : 1;
-  rebuildBgrm();
 }
 
 function rebuildBgrm() {
@@ -2922,24 +2827,6 @@ function redrawBgrmPreview() {
   // checkerboard background, then the processed image (same region, so transparency shows)
   ctx.drawImage(st.bgCanvas, px, py, visW, visH, 0, 0, st.w, st.h);
   ctx.drawImage(st.work || st.imgCanvas, px, py, visW, visH, 0, 0, st.w, st.h);
-  // draw the drawn loop (image coords -> canvas coords)
-  if (st.loop && st.loop.length > 1) {
-    ctx.strokeStyle = 'rgba(255,80,80,0.95)';
-    ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-    ctx.beginPath();
-    ctx.moveTo((st.loop[0].x - px) * z, (st.loop[0].y - py) * z);
-    for (let i = 1; i < st.loop.length; i++) ctx.lineTo((st.loop[i].x - px) * z, (st.loop[i].y - py) * z);
-    ctx.closePath();
-    ctx.stroke();
-  }
-}
-
-function addLoopPoint(p) {
-  const st = bgrmState;
-  const pts = st.loop;
-  if (pts.length && Math.abs(pts[pts.length - 1].x - p.x) < 2 && Math.abs(pts[pts.length - 1].y - p.y) < 2) return;
-  pts.push(p);
-  redrawBgrmPreview();
 }
 
 function bgrmPointerDown(e) {
@@ -2951,15 +2838,6 @@ function bgrmPointerDown(e) {
     moved: false,
   };
   try { document.getElementById('bgrmCanvas').setPointerCapture(e.pointerId); } catch (err) {}
-  if (bgrmState.mode === 'loop') {
-    // start drawing a new loop (cancel any running shrink animation)
-    bgrmState.shrinkKeep = null;
-    bgrmState.loop = [];
-    bgrmState.loopMask = null;
-    bgrmState.removed.fill(0);
-    rebuildBgrm();
-    addLoopPoint(bgrmTapPos(e));
-  }
 }
 
 function bgrmPointerMove(e) {
@@ -2968,11 +2846,7 @@ function bgrmPointerMove(e) {
   e.preventDefault();
   const dx = e.clientX - st.pointer.sx;
   const dy = e.clientY - st.pointer.sy;
-  if (Math.abs(dx) > 2 || Math.abs(dy) > 2) st.pointer.moved = true;
-  if (st.mode === 'loop') {
-    addLoopPoint(bgrmTapPos(e)); // keep drawing the loop
-    return;
-  }
+  if (Math.abs(dx) > 4 || Math.abs(dy) > 4) st.pointer.moved = true;
   if (st.zoom > 1) {
     const rect = document.getElementById('bgrmCanvas').getBoundingClientRect();
     const imgPerPx = st.w / (st.zoom * rect.width); // image px per screen px
@@ -2988,21 +2862,16 @@ function bgrmPointerUp(e) {
   if (!st || !st.pointer) return;
   const moved = st.pointer.moved;
   st.pointer = null;
-  if (st.mode === 'loop') {
-    if (moved && st.loop && st.loop.length >= 3) runLoopShrink();
-    else if (st.loop && st.loop.length < 3) showToast('⚠️ 请画一个圈住物体的封闭线条');
-    return;
-  }
   if (moved) return; // it was a pan, not a tap
-  // a tap → pick the background at that spot
+  // a tap → manual fine-tune: remove the connected background colour at that spot
   const { x, y } = bgrmTapPos(e);
   st.seeds.push({ x: x, y: y });
   floodRemoveBg(x, y);
   rebuildBgrm();
   redrawBgrmPreview();
   document.getElementById('bgrmHint').textContent = st.zoom > 1
-    ? '放大中：拖动画布查看 · 点击背景'
-    : '继续点击可删除更多 · 调容差可重新抠';
+    ? '放大中：拖动画布查看 · 点击背景微调'
+    : '继续点击可删除更多 · 调容差可重新微调';
   updateBgrmButtons();
 }
 
@@ -3020,28 +2889,20 @@ function bgrmZoom(factor) {
   st.panY = cy - st.h / newZ / 2;
   clampBgrmPan(st);
   document.getElementById('bgrmZoomVal').textContent = newZ + '×';
-  document.getElementById('bgrmHint').textContent = st.mode === 'loop'
-    ? (newZ > 1 ? '放大中：画圈会自动吸附 · 松开出结果' : '✏️ 在物体周围画一个圈，松开后自动吸附')
-    : (newZ > 1 ? '放大中：拖动画布查看 · 点击背景' : '👆 点击图片的背景颜色，可多点几处');
+  document.getElementById('bgrmHint').textContent = newZ > 1
+    ? '放大中：拖动画布查看 · 点击背景微调'
+    : '👆 点击背景手动微调，或点上方 🤖 AI 一键抠图';
   redrawBgrmPreview();
 }
 
 function undoBgrm() {
   const st = bgrmState;
   if (!st) return;
-  if (st.mode === 'loop') {
-    // clear the drawn loop and removal (back to original)
-    st.shrinkKeep = null;
-    st.loop = [];
-    st.loopMask = null;
-    st.removed.fill(0);
-    rebuildBgrm();
-    redrawBgrmPreview();
-    updateBgrmButtons();
-    document.getElementById('bgrmHint').textContent = '✏️ 在物体周围画一个圈，松开后自动吸附';
+  // revert only the last manual fine-tune tap; the AI base result stays
+  if (!st.seeds.length) {
+    showToast('已回到 AI 抠图结果');
     return;
   }
-  if (!st.seeds.length) return;
   st.seeds.pop();
   runAllBgrmSeeds();
   updateBgrmButtons();
@@ -3061,11 +2922,7 @@ function onBgrmTolChange() {
   const el = document.getElementById('bgrmTolerance');
   document.getElementById('bgrmTolVal').textContent = el.value;
   if (!bgrmState) return;
-  if (bgrmState.mode === 'loop') {
-    if (bgrmState.loop && bgrmState.loop.length >= 3) runLoopShrink(); // re-shrink with new precision
-    return;
-  }
-  runAllBgrmSeeds();
+  runAllBgrmSeeds(); // re-run manual fine-tune seeds on top of the AI base
 }
 
 // ==================== AI BACKGROUND REMOVAL (U2NET) ====================
@@ -3192,14 +3049,15 @@ async function aiCutout() {
     const out = await aiSession.run({ 'input.1': buildU2netInput(st.imgCanvas) });
     const mask = out['1959'] || out[Object.keys(out)[0]];
     const resized = resizeU2netMask(mask.data, 320, 320, st.w, st.h);
-    st.removed.fill(0);
-    for (let i = 0; i < st.w * st.h; i++) if (resized[i] < 0.5) st.removed[i] = 1;
-    st.loop = [];
-    st.shrinkKeep = null;
+    // AI result becomes the base; manual taps refine on top and undo keeps it
+    st.baseRemoved.fill(0);
+    for (let i = 0; i < st.w * st.h; i++) if (resized[i] < 0.5) st.baseRemoved[i] = 1;
+    st.seeds = [];
+    st.removed.set(st.baseRemoved);
     rebuildBgrm();
     redrawBgrmPreview();
     updateBgrmButtons();
-    hint.textContent = '🤖 已抠图，可调容差微调边缘，或应用/存库';
+    hint.textContent = '🤖 已抠图，可点背景手动微调，或应用/存库';
   } catch (e) {
     console.error(e);
     showAiProgress(false);
